@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         .spinner {
             animation: spin 1s linear infinite;
@@ -27,9 +28,209 @@
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
             <div class="flex justify-between items-center mb-6">
                 <h1 class="text-2xl font-bold text-gray-800">Admin Attendance Dashboard</h1>
-                <a href="qr-scanner.html" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
-                    Take Attendance (QR Scanner)
-                </a>
+                <div class="flex items-center gap-2">
+                    <span id="staffBadge" class="hidden text-xs font-semibold px-3 py-1 rounded-full bg-blue-100 text-blue-800"></span>
+                    <a id="takeAttendanceLink" href="qr-scanner.html" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                        Take Attendance (Select Course)
+                    </a>
+                    <button id="logoutBtn" class="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors">
+                        Logout
+                    </button>
+                </div>
+            </div>
+
+            <div class="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+                    <h2 class="text-lg font-semibold">Institutions</h2>
+                    <span class="text-xs text-gray-500">Define profile, branding and academic config per institution</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div class="md:col-span-2">
+                        <label for="institutionSelect" class="block text-sm font-medium text-gray-700 mb-1">Active Institution Context</label>
+                        <select id="institutionSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <option value="">Loading institutions...</option>
+                        </select>
+                    </div>
+                    <div class="flex items-end">
+                        <button id="openInstitutionEditPageBtn" class="w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700 transition-colors">
+                            Open Institution Page
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-3 flex items-center gap-2 flex-wrap">
+                    <button id="refreshInstitutionsBtn" class="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+                        Refresh Institutions
+                    </button>
+                    <button id="createInstitutionBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">
+                        New Institution
+                    </button>
+                </div>
+                <p id="institutionMessage" class="text-sm mt-2"></p>
+
+                <div class="overflow-x-auto mt-4">
+                    <table class="min-w-full border border-gray-300 text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-3 py-2 border">Name</th>
+                                <th class="px-3 py-2 border">Code</th>
+                                <th class="px-3 py-2 border">Type</th>
+                                <th class="px-3 py-2 border">Location</th>
+                                <th class="px-3 py-2 border">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="institutionsTable" class="bg-white"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                <h2 class="text-lg font-semibold mb-3">Staff Accounts</h2>
+                <div class="mt-3 flex items-center gap-2">
+                    <button id="openStaffCreatePageBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">
+                        New Staff User
+                    </button>
+                    <button id="refreshStaffBtn" class="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+                        Refresh List
+                    </button>
+                </div>
+                <p id="staffUserMessage" class="text-sm mt-2"></p>
+                <div class="overflow-x-auto mt-3">
+                    <table class="min-w-full border border-gray-300 text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-3 py-2 border">Name</th>
+                                <th class="px-3 py-2 border">Email</th>
+                                <th class="px-3 py-2 border">Institution</th>
+                                <th class="px-3 py-2 border">Role</th>
+                                <th class="px-3 py-2 border">Status</th>
+                                <th class="px-3 py-2 border">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="staffUsersTable" class="bg-white"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-3">
+                    <h2 class="text-lg font-semibold">Course Catalog</h2>
+                    <span class="text-xs text-gray-500">Program > Version > Course > Section</span>
+                </div>
+                <div class="mt-3 flex items-center gap-2 flex-wrap">
+                    <button id="openCourseCreatePageBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">
+                        New Course
+                    </button>
+                    <button id="refreshCoursesBtn" class="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+                        Refresh Courses
+                    </button>
+                </div>
+                <p id="courseMessage" class="text-sm mt-2"></p>
+                <div class="overflow-x-auto mt-3">
+                    <table class="min-w-full border border-gray-300 text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-3 py-2 border">Program</th>
+                                <th class="px-3 py-2 border">Version</th>
+                                <th class="px-3 py-2 border">Code</th>
+                                <th class="px-3 py-2 border">Name</th>
+                                <th class="px-3 py-2 border">Section</th>
+                                <th class="px-3 py-2 border">Academic Year</th>
+                                <th class="px-3 py-2 border">Mode</th>
+                                <th class="px-3 py-2 border">Schedule</th>
+                                <th class="px-3 py-2 border">Security</th>
+                                <th class="px-3 py-2 border">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="coursesTable" class="bg-white"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                <h2 class="text-lg font-semibold mb-3">Teacher Assignment</h2>
+                <div class="mb-3 flex items-center gap-2">
+                    <button id="openAssignmentManagerPageBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                        Open Assignment Manager
+                    </button>
+                    <span class="text-xs text-gray-500">Recommended flow for large teams and many courses</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <select id="assignmentTeacherSelect" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"></select>
+                    <select id="assignmentCourseSelect" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"></select>
+                </div>
+                <div class="mt-3 flex items-center gap-2">
+                    <button id="assignTeacherBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">
+                        Assign Teacher to Course
+                    </button>
+                    <button id="refreshAssignmentsBtn" class="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+                        Refresh Assignments
+                    </button>
+                </div>
+                <p id="assignmentMessage" class="text-sm mt-2"></p>
+                <div class="overflow-x-auto mt-3">
+                    <table class="min-w-full border border-gray-300 text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-3 py-2 border">Teacher</th>
+                                <th class="px-3 py-2 border">Email</th>
+                                <th class="px-3 py-2 border">Course</th>
+                                <th class="px-3 py-2 border">Section</th>
+                            </tr>
+                        </thead>
+                        <tbody id="assignmentTable" class="bg-white"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+                <h2 class="text-lg font-semibold mb-3">Course Enrollment Roster</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <select id="enrollmentCourseSelect" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"></select>
+                    <input
+                        type="text"
+                        id="enrollmentSearchInput"
+                        placeholder="Search roll, name, section, class roll"
+                        class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                </div>
+                <div class="mt-3">
+                    <label for="enrollmentBulkInput" class="block text-sm font-medium text-gray-700 mb-1">
+                        Bulk Import (one student per line)
+                    </label>
+                    <textarea
+                        id="enrollmentBulkInput"
+                        rows="5"
+                        placeholder="ROLL001, Juan Perez, A, 01&#10;ROLL002, Maria Diaz, A, 02"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    ></textarea>
+                    <p class="text-xs text-gray-500 mt-1">Format: `universityRollNo, fullName, section, classRollNo`</p>
+                </div>
+                <div class="mt-3 flex items-center gap-2">
+                    <button id="loadEnrollmentsBtn" class="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+                        Load Enrollments
+                    </button>
+                    <button id="saveEnrollmentsBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 transition-colors">
+                        Save Bulk Enrollments
+                    </button>
+                    <button id="replaceEnrollmentsBtn" class="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors">
+                        Replace Roster
+                    </button>
+                </div>
+                <p id="enrollmentMessage" class="text-sm mt-2"></p>
+                <div class="overflow-x-auto mt-3">
+                    <table class="min-w-full border border-gray-300 text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-3 py-2 border">Roll No</th>
+                                <th class="px-3 py-2 border">Full Name</th>
+                                <th class="px-3 py-2 border">Section</th>
+                                <th class="px-3 py-2 border">Class Roll</th>
+                                <th class="px-3 py-2 border">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="enrollmentTable" class="bg-white"></tbody>
+                    </table>
+                </div>
             </div>
             <div class="mb-8">
                 <h2 class="text-lg font-semibold mb-4">Filter Students by Attendance Percentage</h2>
@@ -143,43 +344,754 @@
     </div>
 
     <script>
-    const API_BASE = 'http://localhost:5000';
+    const API_BASE = window.location.origin;
     let chartInstances = [];
-    const token = localStorage.getItem('adminToken');
-    if (!token || token !== 'Hello@123') {
-    window.location.href = 'login.html';
+
+    const dashboardState = {
+        activeModule: 'institutions',
+        academicSubview: 'overview',
+        institutions: { rows: [], activeId: '', viewAll: false },
+        staff: { page: 1, limit: 20, total: 0, totalPages: 1, hasNext: false, q: '' },
+        courses: { page: 1, limit: 25, total: 0, totalPages: 1, hasNext: false, q: '', program: '' },
+        assignments: { page: 1, limit: 25, total: 0, totalPages: 1, hasNext: false, q: '' },
+        enrollments: { page: 1, limit: 50, total: 0, totalPages: 1, hasNext: false, q: '' },
+        teacherPicker: { page: 1, limit: 50, hasNext: false, q: '', rows: [] },
+        assignmentCoursePicker: { page: 1, limit: 50, hasNext: false, q: '', program: '', rows: [] },
+        enrollmentCoursePicker: { page: 1, limit: 50, hasNext: false, q: '', program: '', rows: [] }
+    };
+
+    let modulePanels = {};
+
+    const authToken = localStorage.getItem('authToken');
+    const authUserRaw = localStorage.getItem('authUser');
+    const authUser = authUserRaw ? JSON.parse(authUserRaw) : null;
+    const allowedRoles = ['superadmin', 'admin', 'institution_admin', 'institution_user'];
+
+    if (!authToken || !authUser || !allowedRoles.includes(authUser.role)) {
+        window.location.href = 'login.html';
     }
-    // Utility functions for chart management
-    function trackChartInstance(chart) {
-        chartInstances.push(chart);
-        return chart;
+
+    const isSuperadmin = authUser?.role === 'superadmin';
+    const isGlobalAdmin = authUser?.role === 'superadmin' || authUser?.role === 'admin';
+    const isInstitutionAdmin = authUser?.role === 'institution_admin';
+    const isInstitutionViewer = authUser?.role === 'institution_user';
+    const canManageInstitutionProfile = isGlobalAdmin || isInstitutionAdmin;
+    const canCreateInstitutions = isGlobalAdmin;
+    const canManageStaff = isGlobalAdmin || isInstitutionAdmin;
+    const canManageAcademic = isGlobalAdmin || isInstitutionAdmin;
+    const ALL_INSTITUTIONS_VALUE = '__all__';
+    const INSTITUTION_SCOPE_KEY = 'activeInstitutionScope';
+
+    function buildStaffRoleOptions() {
+        if (isSuperadmin) {
+            return [
+                { value: 'teacher', label: 'Teacher' },
+                { value: 'institution_user', label: 'Institution User (Read Only)' },
+                { value: 'institution_admin', label: 'Institution Admin' },
+                { value: 'admin', label: 'Admin (Platform)' }
+            ];
+        }
+        if (authUser?.role === 'admin') {
+            return [
+                { value: 'teacher', label: 'Teacher' },
+                { value: 'institution_user', label: 'Institution User (Read Only)' },
+                { value: 'institution_admin', label: 'Institution Admin' }
+            ];
+        }
+        if (isInstitutionAdmin) {
+            return [
+                { value: 'teacher', label: 'Teacher' },
+                { value: 'institution_user', label: 'Institution User (Read Only)' }
+            ];
+        }
+        return [];
     }
-    
-    function destroyAllCharts() {
-        chartInstances.forEach(chart => {
-            if (chart && typeof chart.destroy === 'function') {
-                chart.destroy();
+
+    axios.defaults.headers.common.Authorization = `Bearer ${authToken}`;
+    axios.interceptors.request.use((config) => {
+        const storedInstitutionId = localStorage.getItem('activeInstitutionId') || '';
+        const scopedInstitutionId = isGlobalAdmin
+            ? storedInstitutionId
+            : (storedInstitutionId || authUser?.institutionId || '');
+
+        if (scopedInstitutionId) {
+            config.headers['X-Institution-Id'] = scopedInstitutionId;
+        } else if (config.headers && Object.prototype.hasOwnProperty.call(config.headers, 'X-Institution-Id')) {
+            delete config.headers['X-Institution-Id'];
+        }
+        return config;
+    });
+    axios.interceptors.response.use(
+        (response) => response,
+        (error) => {
+            const status = error?.response?.status;
+            if (status === 401 || status === 403) {
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('authUser');
+                localStorage.removeItem('adminToken');
+                localStorage.removeItem('activeInstitutionId');
+                localStorage.removeItem('activeInstitutionName');
+                localStorage.removeItem(INSTITUTION_SCOPE_KEY);
+                window.location.href = 'login.html';
             }
-        });
-        chartInstances = [];
+            return Promise.reject(error);
+        }
+    );
+
+    function escapeHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
     }
-    
-    // Debounce function to limit rapid API calls
-    function debounce(func, wait) {
-        let timeout;
-        return function(...args) {
-            clearTimeout(timeout);
-            timeout = setTimeout(() => func.apply(this, args), wait);
+
+    function parsePaginationMeta(payload, fallbackPage = 1, fallbackLimit = 20) {
+        const pagination = payload?.pagination || {};
+        const total = Number(pagination.total ?? 0);
+        const page = Number(pagination.page ?? fallbackPage) || fallbackPage;
+        const limit = Number(pagination.limit ?? fallbackLimit) || fallbackLimit;
+        const totalPages = Number(pagination.totalPages ?? Math.max(1, Math.ceil(total / Math.max(limit, 1)))) || 1;
+        const hasNext = typeof pagination.hasNext === 'boolean' ? pagination.hasNext : page < totalPages;
+
+        return {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNext
         };
     }
-    
-    // Initialize charts with empty data
-    function initializeCharts() {
+
+    function updatePager(prefix, meta) {
+        const prevBtn = document.getElementById(`${prefix}PrevBtn`);
+        const nextBtn = document.getElementById(`${prefix}NextBtn`);
+        const info = document.getElementById(`${prefix}PageInfo`);
+
+        if (prevBtn) prevBtn.disabled = meta.page <= 1;
+        if (nextBtn) nextBtn.disabled = !meta.hasNext;
+        if (info) {
+            info.textContent = `Page ${meta.page}/${meta.totalPages} • ${meta.total} records`;
+        }
+    }
+
+    function setLoadMoreState(buttonId, hasNext, defaultLabel) {
+        const button = document.getElementById(buttonId);
+        if (!button) return;
+        button.disabled = !hasNext;
+        button.textContent = hasNext ? defaultLabel : 'No more results';
+    }
+
+    function sectionFromControlId(controlId) {
+        const el = document.getElementById(controlId);
+        if (!el) return null;
+        return el.closest('.mb-8') || el.parentElement;
+    }
+
+    function uniqueNodes(nodes) {
+        return Array.from(new Set(nodes.filter(Boolean)));
+    }
+
+    function setTabButtonState(button, isActive) {
+        button.classList.remove('bg-indigo-600', 'text-white', 'border-indigo-600', 'bg-white', 'text-gray-700', 'border-gray-300');
+        if (isActive) {
+            button.classList.add('bg-indigo-600', 'text-white', 'border-indigo-600');
+        } else {
+            button.classList.add('bg-white', 'text-gray-700', 'border-gray-300');
+        }
+    }
+
+    function setActiveModule(moduleKey) {
+        if (!modulePanels[moduleKey]) return;
+        dashboardState.activeModule = moduleKey;
+
+        Object.entries(modulePanels).forEach(([key, panels]) => {
+            const shouldShow = key === moduleKey;
+            panels.forEach((panel) => {
+                panel.classList.toggle('hidden', !shouldShow);
+            });
+        });
+
+        document.querySelectorAll('[data-module-tab]').forEach((btn) => {
+            setTabButtonState(btn, btn.dataset.moduleTab === moduleKey);
+        });
+
+        if (moduleKey === 'academic') {
+            setAcademicSubview('overview');
+        }
+    }
+
+    function setupModuleTabs() {
+        const institutionPanels = uniqueNodes([
+            sectionFromControlId('institutionSelect')
+        ]);
+        const staffPanels = uniqueNodes([
+            sectionFromControlId('staffUserMessage')
+        ]);
+        const academicPanels = uniqueNodes([
+            document.getElementById('academicOverviewPanel'),
+            sectionFromControlId('openCourseCreatePageBtn'),
+            sectionFromControlId('assignmentTeacherSelect'),
+            sectionFromControlId('enrollmentCourseSelect')
+        ]);
+        const reportPanels = uniqueNodes([
+            sectionFromControlId('minPercentage'),
+            document.getElementById('percentageResults'),
+            sectionFromControlId('studentRollNo'),
+            document.getElementById('studentDetails'),
+            sectionFromControlId('attendanceDate'),
+            document.getElementById('dateSummary')
+        ]);
+
+        modulePanels = {
+            institutions: institutionPanels,
+            staff: staffPanels,
+            academic: academicPanels,
+            reports: reportPanels
+        };
+
+        Object.entries(modulePanels).forEach(([key, panels]) => {
+            panels.forEach((panel) => {
+                panel.dataset.modulePanel = key;
+            });
+        });
+
+        if (!document.getElementById('moduleTabs')) {
+            const card = document.querySelector('.bg-white.rounded-lg.shadow-md.p-6.mb-6');
+            const header = card?.querySelector('.flex.justify-between.items-center.mb-6');
+            if (card && header) {
+                const tabsWrap = document.createElement('div');
+                tabsWrap.id = 'moduleTabs';
+                tabsWrap.className = 'mb-6 border-b border-gray-200 pb-3 flex flex-wrap gap-2';
+                tabsWrap.innerHTML = `
+                    <button type="button" data-module-tab="institutions" class="px-3 py-2 text-sm font-medium rounded-lg border">Institutions</button>
+                    <button type="button" data-module-tab="staff" class="px-3 py-2 text-sm font-medium rounded-lg border">Staff</button>
+                    <button type="button" data-module-tab="academic" class="px-3 py-2 text-sm font-medium rounded-lg border">Academic</button>
+                    <button type="button" data-module-tab="reports" class="px-3 py-2 text-sm font-medium rounded-lg border">Reports</button>
+                `;
+                header.insertAdjacentElement('afterend', tabsWrap);
+            }
+        }
+
+        document.querySelectorAll('[data-module-tab]').forEach((btn) => {
+            if (btn.dataset.listenersBound === 'true') return;
+            btn.dataset.listenersBound = 'true';
+            btn.addEventListener('click', () => {
+                setActiveModule(btn.dataset.moduleTab);
+            });
+        });
+
+        setActiveModule(dashboardState.activeModule);
+    }
+
+    function setAcademicSubview(viewKey = 'overview') {
+        dashboardState.academicSubview = viewKey;
+        const isAcademicModuleActive = dashboardState.activeModule === 'academic';
+        const panels = Array.from(document.querySelectorAll('[data-academic-subview]'));
+        panels.forEach((panel) => {
+            panel.classList.toggle('hidden', !isAcademicModuleActive || panel.dataset.academicSubview !== viewKey);
+        });
+
+        document.querySelectorAll('[data-academic-subtab]').forEach((button) => {
+            const isActive = button.dataset.academicSubtab === viewKey;
+            button.classList.remove('bg-indigo-600', 'text-white', 'border-indigo-600', 'bg-white', 'text-gray-700', 'border-gray-300');
+            if (isActive) {
+                button.classList.add('bg-indigo-600', 'text-white', 'border-indigo-600');
+            } else {
+                button.classList.add('bg-white', 'text-gray-700', 'border-gray-300');
+            }
+        });
+
+        if (viewKey === 'overview') {
+            loadAcademicKpis();
+        }
+    }
+
+    function renderAcademicKpis(kpis) {
+        const map = {
+            academicKpiPrograms: kpis.programs,
+            academicKpiCourses: kpis.courses,
+            academicKpiTeachers: kpis.teachers,
+            academicKpiAssignments: kpis.assignments,
+        };
+
+        Object.entries(map).forEach(([id, value]) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.textContent = Number(value || 0).toLocaleString();
+            }
+        });
+    }
+
+    async function loadAcademicKpis() {
+        try {
+            const [programsRes, coursesRes, teachersRes, assignmentsRes] = await Promise.all([
+                axios.get(`${API_BASE}/api/academic/programs`, { params: { active: 'true' } }),
+                axios.get(`${API_BASE}/api/academic/courses`, { params: { page: 1, limit: 1, active: 'true' } }),
+                axios.get(`${API_BASE}/api/academic/teachers`, { params: { page: 1, limit: 1, active: 'true' } }),
+                axios.get(`${API_BASE}/api/academic/assignments`, { params: { page: 1, limit: 1, active: 'true' } }),
+            ]);
+
+            const programs = Array.isArray(programsRes.data?.data) ? programsRes.data.data.length : 0;
+            const courses = Number(coursesRes.data?.pagination?.total || 0);
+            const teachers = Number(teachersRes.data?.pagination?.total || 0);
+            const assignments = Number(assignmentsRes.data?.pagination?.total || 0);
+
+            renderAcademicKpis({ programs, courses, teachers, assignments });
+        } catch (error) {
+            console.error('Failed to load academic KPIs', error);
+        }
+    }
+
+    function downloadEnrollmentTemplate() {
+        const csvLines = [
+            'universityRollNo,fullName,section,classRollNo',
+            'ROLL001,Juan Perez,A,01',
+            'ROLL002,Maria Diaz,A,02',
+        ];
+        const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'enrollment_template.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function matrixToEnrollmentRows(matrix) {
+        const rows = Array.isArray(matrix) ? matrix : [];
+        if (!rows.length) return [];
+
+        const normalizeHeader = (value) =>
+            String(value || '')
+                .trim()
+                .toLowerCase()
+                .replace(/[^a-z0-9]/g, '');
+
+        const firstRow = rows[0].map(normalizeHeader);
+        const detect = (candidates) => firstRow.findIndex((header) => candidates.includes(header));
+        const idxRoll = detect(['universityrollno', 'rollno', 'roll', 'universityroll']);
+        const idxName = detect(['fullname', 'name', 'studentname']);
+        const idxSection = detect(['section']);
+        const idxClassRoll = detect(['classrollno', 'classroll', 'classrollnumber']);
+
+        const hasHeader = idxRoll >= 0 && idxName >= 0 && idxSection >= 0 && idxClassRoll >= 0;
+        const start = hasHeader ? 1 : 0;
+
+        const result = [];
+        for (let i = start; i < rows.length; i += 1) {
+            const r = rows[i] || [];
+            const roll = String(hasHeader ? r[idxRoll] : r[0] || '').trim();
+            const name = String(hasHeader ? r[idxName] : r[1] || '').trim();
+            const section = String(hasHeader ? r[idxSection] : r[2] || '').trim();
+            const classRoll = String(hasHeader ? r[idxClassRoll] : r[3] || '').trim();
+            if (!roll && !name && !section && !classRoll) continue;
+            result.push({
+                universityRollNo: roll,
+                fullName: name,
+                section,
+                classRollNo: classRoll,
+            });
+        }
+
+        return result;
+    }
+
+    function textToEnrollmentRows(rawText) {
+        const lines = String(rawText || '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        if (!lines.length) return [];
+
+        const delimiter = lines[0].includes(';') ? ';' : (lines[0].includes('\t') ? '\t' : ',');
+        const matrix = lines.map((line) => line.split(delimiter).map((part) => part.trim()));
+        return matrixToEnrollmentRows(matrix);
+    }
+
+    async function importEnrollmentFile() {
+        const input = document.getElementById('enrollmentFileInput');
+        const file = input?.files?.[0];
+        if (!file) {
+            setEnrollmentMessage('Choose a file first (.csv, .xlsx, .xls).', 'error');
+            return;
+        }
+
+        try {
+            const name = file.name.toLowerCase();
+            let rows = [];
+
+            if ((name.endsWith('.xlsx') || name.endsWith('.xls')) && window.XLSX) {
+                const buffer = await file.arrayBuffer();
+                const workbook = window.XLSX.read(buffer, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const matrix = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                rows = matrixToEnrollmentRows(matrix);
+            } else {
+                const text = await file.text();
+                rows = textToEnrollmentRows(text);
+            }
+
+            if (!rows.length) {
+                setEnrollmentMessage('No valid rows found in file.', 'error');
+                return;
+            }
+
+            const textarea = document.getElementById('enrollmentBulkInput');
+            if (textarea) {
+                textarea.value = rows
+                    .map((r) => `${r.universityRollNo}, ${r.fullName}, ${r.section}, ${r.classRollNo}`)
+                    .join('\n');
+            }
+
+            setEnrollmentMessage(`Loaded ${rows.length} rows from file. Click Save Bulk Enrollments or Replace Roster.`, 'success');
+        } catch (error) {
+            setEnrollmentMessage(`Failed to parse file: ${error.message}`, 'error');
+        }
+    }
+
+    function initializeAcademicWorkspace() {
+        document.querySelectorAll('[data-academic-subtab]').forEach((button) => {
+            if (button.dataset.listenersBound === 'true') return;
+            button.dataset.listenersBound = 'true';
+            button.addEventListener('click', () => {
+                setAcademicSubview(button.dataset.academicSubtab || 'overview');
+            });
+        });
+
+        const quickToCoursesBtn = document.getElementById('academicGoCoursesBtn');
+        if (quickToCoursesBtn && quickToCoursesBtn.dataset.listenersBound !== 'true') {
+            quickToCoursesBtn.dataset.listenersBound = 'true';
+            quickToCoursesBtn.addEventListener('click', () => {
+                openCourseEditor('create');
+            });
+        }
+
+        const quickToAssignmentsBtn = document.getElementById('academicGoAssignmentsBtn');
+        if (quickToAssignmentsBtn && quickToAssignmentsBtn.dataset.listenersBound !== 'true') {
+            quickToAssignmentsBtn.dataset.listenersBound = 'true';
+            quickToAssignmentsBtn.addEventListener('click', () => {
+                openAssignmentManager();
+            });
+        }
+
+        const quickToEnrollmentBtn = document.getElementById('academicGoEnrollmentBtn');
+        if (quickToEnrollmentBtn && quickToEnrollmentBtn.dataset.listenersBound !== 'true') {
+            quickToEnrollmentBtn.dataset.listenersBound = 'true';
+            quickToEnrollmentBtn.addEventListener('click', () => {
+                setActiveModule('academic');
+                setAcademicSubview('enrollment');
+                document.getElementById('enrollmentFileInput')?.focus();
+            });
+        }
+
+        const templateBtn = document.getElementById('downloadEnrollmentTemplateBtn');
+        if (templateBtn && templateBtn.dataset.listenersBound !== 'true') {
+            templateBtn.dataset.listenersBound = 'true';
+            templateBtn.addEventListener('click', downloadEnrollmentTemplate);
+        }
+
+        const fileInput = document.getElementById('enrollmentFileInput');
+        if (fileInput && fileInput.dataset.listenersBound !== 'true') {
+            fileInput.dataset.listenersBound = 'true';
+            fileInput.addEventListener('change', importEnrollmentFile);
+        }
+
+        const parseFileBtn = document.getElementById('parseEnrollmentFileBtn');
+        if (parseFileBtn && parseFileBtn.dataset.listenersBound !== 'true') {
+            parseFileBtn.dataset.listenersBound = 'true';
+            parseFileBtn.addEventListener('click', importEnrollmentFile);
+        }
+
+        setAcademicSubview(dashboardState.academicSubview || 'overview');
+    }
+
+    function injectToolbar(section, id, html) {
+        if (!section || document.getElementById(id)) return;
+        const wrapper = document.createElement('div');
+        wrapper.id = id;
+        wrapper.className = 'mb-3';
+        wrapper.innerHTML = html;
+        const heading = section.querySelector('h2');
+        if (heading) {
+            heading.insertAdjacentElement('afterend', wrapper);
+        } else {
+            section.prepend(wrapper);
+        }
+    }
+
+    function injectPager(tableBodyId, prefix) {
+        const tableBody = document.getElementById(tableBodyId);
+        const tableWrapper = tableBody?.closest('.overflow-x-auto');
+        if (!tableWrapper || document.getElementById(`${prefix}Pager`)) return;
+
+        const pager = document.createElement('div');
+        pager.id = `${prefix}Pager`;
+        pager.className = 'mt-3 flex flex-wrap items-center gap-2';
+        pager.innerHTML = `
+            <button id="${prefix}PrevBtn" type="button" class="bg-white text-gray-800 border border-gray-300 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">Prev</button>
+            <button id="${prefix}NextBtn" type="button" class="bg-white text-gray-800 border border-gray-300 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors">Next</button>
+            <span id="${prefix}PageInfo" class="text-sm text-gray-600"></span>
+        `;
+
+        tableWrapper.insertAdjacentElement('afterend', pager);
+    }
+
+    function setupScalableControls() {
+        const staffSection = sectionFromControlId('staffUserMessage');
+        injectToolbar(
+            staffSection,
+            'staffToolbar',
+            `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <input id="staffSearchInput" type="text" placeholder="Search by name, email or role"
+                        class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <select id="staffLimitSelect" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="10">10 rows</option>
+                        <option value="20" selected>20 rows</option>
+                        <option value="50">50 rows</option>
+                        <option value="100">100 rows</option>
+                    </select>
+                    <button id="staffSearchClearBtn" type="button" class="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors">Clear search</button>
+                </div>
+            `
+        );
+        injectPager('staffUsersTable', 'staff');
+
+        const coursesSection = sectionFromControlId('openCourseCreatePageBtn');
+        const assignmentSectionForOverview = sectionFromControlId('assignmentTeacherSelect');
+
+        if (coursesSection && assignmentSectionForOverview && !document.getElementById('academicOverviewPanel')) {
+            const overview = document.createElement('div');
+            overview.id = 'academicOverviewPanel';
+            overview.className = 'mb-8 p-4 border border-gray-200 rounded-lg bg-indigo-50';
+            overview.innerHTML =                 '<div class="flex flex-wrap items-center justify-between gap-3 mb-4">' +
+                    '<h2 class="text-lg font-semibold">Academic Overview</h2>' +
+                    '<div class="flex flex-wrap gap-2">' +
+                        '<button type="button" data-academic-subtab="overview" class="px-3 py-2 text-sm font-medium rounded-lg border">Overview</button>' +
+                        '<button type="button" data-academic-subtab="courses" class="px-3 py-2 text-sm font-medium rounded-lg border">Courses</button>' +
+                        '<button type="button" data-academic-subtab="assignments" class="px-3 py-2 text-sm font-medium rounded-lg border">Assignments</button>' +
+                        '<button type="button" data-academic-subtab="enrollment" class="px-3 py-2 text-sm font-medium rounded-lg border">Enrollment</button>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">' +
+                    '<div class="bg-white rounded-lg p-3 border border-gray-200"><p class="text-xs text-gray-500">Programs</p><p id="academicKpiPrograms" class="text-2xl font-semibold">0</p></div>' +
+                    '<div class="bg-white rounded-lg p-3 border border-gray-200"><p class="text-xs text-gray-500">Courses</p><p id="academicKpiCourses" class="text-2xl font-semibold">0</p></div>' +
+                    '<div class="bg-white rounded-lg p-3 border border-gray-200"><p class="text-xs text-gray-500">Teachers</p><p id="academicKpiTeachers" class="text-2xl font-semibold">0</p></div>' +
+                    '<div class="bg-white rounded-lg p-3 border border-gray-200"><p class="text-xs text-gray-500">Assignments</p><p id="academicKpiAssignments" class="text-2xl font-semibold">0</p></div>' +
+                '</div>' +
+                '<div class="flex flex-wrap gap-2">' +
+                    '<button id="academicGoCoursesBtn" type="button" class="bg-indigo-600 text-white px-3 py-2 rounded-lg text-sm">Create / Configure Courses</button>' +
+                    '<button id="academicGoAssignmentsBtn" type="button" class="bg-white text-gray-800 border border-gray-300 px-3 py-2 rounded-lg text-sm">Assign Teachers</button>' +
+                    '<button id="academicGoEnrollmentBtn" type="button" class="bg-white text-gray-800 border border-gray-300 px-3 py-2 rounded-lg text-sm">Import Enrollment Roster</button>' +
+                '</div>';
+
+            coursesSection.parentNode.insertBefore(overview, coursesSection);
+        }
+
+        const academicOverviewPanel = document.getElementById('academicOverviewPanel');
+        if (academicOverviewPanel) {
+            academicOverviewPanel.dataset.academicSubview = 'overview';
+        }
+        if (coursesSection) {
+            coursesSection.dataset.academicSubview = 'courses';
+        }
+        if (assignmentSectionForOverview) {
+            assignmentSectionForOverview.dataset.academicSubview = 'assignments';
+        }
+        injectToolbar(
+            coursesSection,
+            'coursesToolbar',
+            `
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
+                    <select id="courseProgramFilterSelect" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">All programs</option>
+                    </select>
+                    <input id="courseSearchInput" type="text" placeholder="Search by program, version, code, name, section, year, day or time"
+                        class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <select id="courseLimitSelect" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="10">10 rows</option>
+                        <option value="25" selected>25 rows</option>
+                        <option value="50">50 rows</option>
+                        <option value="100">100 rows</option>
+                    </select>
+                    <button id="courseSearchClearBtn" type="button" class="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors">Clear search</button>
+                </div>
+            `
+        );
+        injectPager('coursesTable', 'course');
+
+        const assignmentSection = sectionFromControlId('assignmentTeacherSelect');
+        injectToolbar(
+            assignmentSection,
+            'assignmentsToolbar',
+            `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <input id="assignmentSearchInput" type="text" placeholder="Search assignment by teacher/program/version/course/section"
+                        class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <select id="assignmentLimitSelect" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="10">10 rows</option>
+                        <option value="25" selected>25 rows</option>
+                        <option value="50">50 rows</option>
+                        <option value="100">100 rows</option>
+                    </select>
+                    <button id="assignmentSearchClearBtn" type="button" class="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors">Clear search</button>
+                </div>
+            `
+        );
+        injectPager('assignmentTable', 'assignment');
+
+        const teacherSelect = document.getElementById('assignmentTeacherSelect');
+        const teacherContainer = teacherSelect?.parentElement;
+        if (teacherSelect && teacherContainer && !document.getElementById('assignmentTeacherSearchInput')) {
+            teacherSelect.size = 6;
+            teacherSelect.classList.add('w-full');
+
+            const label = document.createElement('label');
+            label.className = 'block text-sm font-medium text-gray-700';
+            label.textContent = 'Teacher';
+            const search = document.createElement('input');
+            search.id = 'assignmentTeacherSearchInput';
+            search.type = 'text';
+            search.placeholder = 'Search teacher by name/email';
+            search.className = 'p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 w-full';
+            const moreBtn = document.createElement('button');
+            moreBtn.id = 'assignmentTeacherMoreBtn';
+            moreBtn.type = 'button';
+            moreBtn.className = 'text-sm bg-white text-gray-800 border border-gray-300 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors';
+            moreBtn.textContent = 'Load more teachers';
+
+            teacherContainer.classList.add('space-y-2');
+            teacherContainer.insertBefore(label, teacherSelect);
+            teacherContainer.insertBefore(search, teacherSelect);
+            teacherContainer.appendChild(moreBtn);
+        }
+
+        const assignmentCourseSelect = document.getElementById('assignmentCourseSelect');
+        const assignmentCourseContainer = assignmentCourseSelect?.parentElement;
+        if (assignmentCourseSelect && assignmentCourseContainer && !document.getElementById('assignmentCourseSearchInput')) {
+            assignmentCourseSelect.size = 6;
+            assignmentCourseSelect.classList.add('w-full');
+
+            const label = document.createElement('label');
+            label.className = 'block text-sm font-medium text-gray-700';
+            label.textContent = 'Course / Section';
+            const search = document.createElement('input');
+            search.id = 'assignmentCourseSearchInput';
+            search.type = 'text';
+            search.placeholder = 'Search course by code/name/section/day/time';
+            search.className = 'p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 w-full';
+            const programFilter = document.createElement('select');
+            programFilter.id = 'assignmentCourseProgramFilterSelect';
+            programFilter.className = 'p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 w-full';
+            programFilter.innerHTML = '<option value="">All programs</option>';
+            const moreBtn = document.createElement('button');
+            moreBtn.id = 'assignmentCourseMoreBtn';
+            moreBtn.type = 'button';
+            moreBtn.className = 'text-sm bg-white text-gray-800 border border-gray-300 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors';
+            moreBtn.textContent = 'Load more courses';
+
+            assignmentCourseContainer.classList.add('space-y-2');
+            assignmentCourseContainer.insertBefore(label, assignmentCourseSelect);
+            assignmentCourseContainer.insertBefore(search, assignmentCourseSelect);
+            assignmentCourseContainer.insertBefore(programFilter, assignmentCourseSelect);
+            assignmentCourseContainer.appendChild(moreBtn);
+        }
+
+        const enrollmentSection = sectionFromControlId('enrollmentCourseSelect');
+        if (enrollmentSection) {
+            enrollmentSection.dataset.academicSubview = 'enrollment';
+        }
+
+        if (enrollmentSection && !document.getElementById('enrollmentImportPanel')) {
+            const importPanel = document.createElement('div');
+            importPanel.id = 'enrollmentImportPanel';
+            importPanel.className = 'mt-3 p-3 rounded-lg border border-blue-200 bg-blue-50';
+            importPanel.innerHTML =                 '<p class="text-sm font-medium text-blue-900">Enrollment Roster (Official Class List)</p>' +
+                '<p class="text-xs text-blue-800 mt-1">This roster is the official list of students allowed to mark attendance for the selected course.</p>' +
+                '<div class="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">' +
+                    '<input id="enrollmentFileInput" type="file" accept=".csv,.xlsx,.xls" class="p-2 border border-blue-200 rounded-lg bg-white" />' +
+                    '<button id="parseEnrollmentFileBtn" type="button" class="bg-white text-gray-800 border border-gray-300 px-3 py-2 rounded-lg text-sm">Import File to Bulk Text</button>' +
+                    '<button id="downloadEnrollmentTemplateBtn" type="button" class="bg-white text-gray-800 border border-gray-300 px-3 py-2 rounded-lg text-sm">Download CSV Template</button>' +
+                '</div>';
+
+            const heading = enrollmentSection.querySelector('h2');
+            if (heading) {
+                heading.insertAdjacentElement('afterend', importPanel);
+            } else {
+                enrollmentSection.prepend(importPanel);
+            }
+        }
+
+        const enrollmentSearchInput = document.getElementById('enrollmentSearchInput');
+        const enrollmentSearchContainer = enrollmentSearchInput?.parentElement;
+        if (enrollmentSearchContainer && !document.getElementById('enrollmentLimitSelect')) {
+            const limitSelect = document.createElement('select');
+            limitSelect.id = 'enrollmentLimitSelect';
+            limitSelect.className = 'p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 w-full';
+            limitSelect.innerHTML = `
+                <option value="25">25 rows</option>
+                <option value="50" selected>50 rows</option>
+                <option value="100">100 rows</option>
+                <option value="200">200 rows</option>
+            `;
+            enrollmentSearchContainer.appendChild(limitSelect);
+        }
+
+        const enrollmentCourseSelect = document.getElementById('enrollmentCourseSelect');
+        const enrollmentCourseContainer = enrollmentCourseSelect?.parentElement;
+        if (enrollmentCourseSelect && enrollmentCourseContainer && !document.getElementById('enrollmentCourseSearchInput')) {
+            enrollmentCourseSelect.size = 6;
+            enrollmentCourseSelect.classList.add('w-full');
+
+            const label = document.createElement('label');
+            label.className = 'block text-sm font-medium text-gray-700';
+            label.textContent = 'Course / Section';
+            const search = document.createElement('input');
+            search.id = 'enrollmentCourseSearchInput';
+            search.type = 'text';
+            search.placeholder = 'Search course by code/name/section/day/time';
+            search.className = 'p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 w-full';
+            const programFilter = document.createElement('select');
+            programFilter.id = 'enrollmentCourseProgramFilterSelect';
+            programFilter.className = 'p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 w-full';
+            programFilter.innerHTML = '<option value="">All programs</option>';
+            const moreBtn = document.createElement('button');
+            moreBtn.id = 'enrollmentCourseMoreBtn';
+            moreBtn.type = 'button';
+            moreBtn.className = 'text-sm bg-white text-gray-800 border border-gray-300 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors';
+            moreBtn.textContent = 'Load more courses';
+
+            enrollmentCourseContainer.classList.add('space-y-2');
+            enrollmentCourseContainer.insertBefore(label, enrollmentCourseSelect);
+            enrollmentCourseContainer.insertBefore(search, enrollmentCourseSelect);
+            enrollmentCourseContainer.insertBefore(programFilter, enrollmentCourseSelect);
+            enrollmentCourseContainer.appendChild(moreBtn);
+        }
+
+        if (enrollmentSection && !document.getElementById('enrollmentSearchHint')) {
+            const hint = document.createElement('p');
+            hint.id = 'enrollmentSearchHint';
+            hint.className = 'text-xs text-gray-500 mt-2';
+            hint.textContent = 'Enrollment search is server-side and paginated for large rosters.';
+            const heading = enrollmentSection.querySelector('h2');
+            if (heading) heading.insertAdjacentElement('afterend', hint);
+        }
+        injectPager('enrollmentTable', 'enrollment');
+    }
+
+    function setupCharts() {
         destroyAllCharts();
-        
-        const studentCtx = document.getElementById('studentChart').getContext('2d');
-        const attendanceCtx = document.getElementById('attendanceChart').getContext('2d');
-        
+
+        const studentChart = document.getElementById('studentChart');
+        const attendanceChart = document.getElementById('attendanceChart');
+        if (!studentChart || !attendanceChart) return;
+
+        const studentCtx = studentChart.getContext('2d');
+        const attendanceCtx = attendanceChart.getContext('2d');
+
         trackChartInstance(new Chart(studentCtx, {
             type: 'bar',
             data: {
@@ -206,7 +1118,7 @@
                 }
             }
         }));
-        
+
         trackChartInstance(new Chart(attendanceCtx, {
             type: 'pie',
             data: {
@@ -229,19 +1141,1884 @@
             }
         }));
     }
-    
-    document.addEventListener('DOMContentLoaded', () => {
-        initializeCharts();
-        document.getElementById('searchPercentageBtn').addEventListener('click', 
+
+    function trackChartInstance(chart) {
+        chartInstances.push(chart);
+        return chart;
+    }
+
+    function destroyAllCharts() {
+        chartInstances.forEach(chart => {
+            if (chart && typeof chart.destroy === 'function') {
+                chart.destroy();
+            }
+        });
+        chartInstances = [];
+    }
+
+    function debounce(func, wait) {
+        let timeout;
+        return function (...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
+
+    function setStaffMessage(message, type = 'info') {
+        const messageEl = document.getElementById('staffUserMessage');
+        if (!messageEl) return;
+        messageEl.textContent = message;
+        messageEl.className = 'text-sm mt-2';
+        if (type === 'error') messageEl.classList.add('text-red-600');
+        if (type === 'success') messageEl.classList.add('text-green-600');
+        if (type === 'info') messageEl.classList.add('text-gray-600');
+    }
+
+    function setCourseMessage(message, type = 'info') {
+        const messageEl = document.getElementById('courseMessage');
+        if (!messageEl) return;
+        messageEl.textContent = message;
+        messageEl.className = 'text-sm mt-2';
+        if (type === 'error') messageEl.classList.add('text-red-600');
+        if (type === 'success') messageEl.classList.add('text-green-600');
+        if (type === 'info') messageEl.classList.add('text-gray-600');
+    }
+
+    function setAssignmentMessage(message, type = 'info') {
+        const messageEl = document.getElementById('assignmentMessage');
+        if (!messageEl) return;
+        messageEl.textContent = message;
+        messageEl.className = 'text-sm mt-2';
+        if (type === 'error') messageEl.classList.add('text-red-600');
+        if (type === 'success') messageEl.classList.add('text-green-600');
+        if (type === 'info') messageEl.classList.add('text-gray-600');
+    }
+
+    function setEnrollmentMessage(message, type = 'info') {
+        const messageEl = document.getElementById('enrollmentMessage');
+        if (!messageEl) return;
+        messageEl.textContent = message;
+        messageEl.className = 'text-sm mt-2';
+        if (type === 'error') messageEl.classList.add('text-red-600');
+        if (type === 'success') messageEl.classList.add('text-green-600');
+        if (type === 'info') messageEl.classList.add('text-gray-600');
+    }
+
+    function setInstitutionMessage(message, type = 'info') {
+        const messageEl = document.getElementById('institutionMessage');
+        if (!messageEl) return;
+        messageEl.textContent = message;
+        messageEl.className = 'text-sm mt-2';
+        if (type === 'error') messageEl.classList.add('text-red-600');
+        if (type === 'success') messageEl.classList.add('text-green-600');
+        if (type === 'info') messageEl.classList.add('text-gray-600');
+    }
+
+    function resetCourseCatalogFilters() {
+        dashboardState.courses.q = '';
+        dashboardState.courses.program = '';
+        dashboardState.courses.page = 1;
+        dashboardState.assignmentCoursePicker.program = '';
+        dashboardState.enrollmentCoursePicker.program = '';
+
+        const courseSearchInput = document.getElementById('courseSearchInput');
+        if (courseSearchInput) courseSearchInput.value = '';
+
+        const selects = [
+            document.getElementById('courseProgramFilterSelect'),
+            document.getElementById('assignmentCourseProgramFilterSelect'),
+            document.getElementById('enrollmentCourseProgramFilterSelect')
+        ];
+        selects.forEach((select) => {
+            if (select) select.value = '';
+        });
+    }
+
+    function getActiveInstitutionId() {
+        const storedScope = localStorage.getItem(INSTITUTION_SCOPE_KEY);
+        if (isGlobalAdmin && (dashboardState.institutions.viewAll || storedScope === 'all')) {
+            return '';
+        }
+        const storedInstitutionId = localStorage.getItem('activeInstitutionId') || '';
+        if (storedInstitutionId === ALL_INSTITUTIONS_VALUE) return '';
+        return dashboardState.institutions.activeId || storedInstitutionId || authUser?.institutionId || '';
+    }
+
+    function getActiveInstitutionLabel() {
+        if (isGlobalAdmin && dashboardState.institutions.viewAll) {
+            return 'All Institutions';
+        }
+        const activeId = getActiveInstitutionId();
+        const row = dashboardState.institutions.rows.find((item) => item.id === activeId);
+        return row?.name || authUser?.institution?.name || '';
+    }
+
+    function getInstitutionById(institutionId) {
+        return dashboardState.institutions.rows.find((item) => item.id === institutionId) || null;
+    }
+
+    function formatInstitutionType(type) {
+        const value = String(type || '').trim().toLowerCase();
+        const labels = {
+            university: 'University',
+            college: 'College',
+            school: 'School',
+            institute: 'Institute',
+            other: 'Other'
+        };
+        return labels[value] || 'Other';
+    }
+
+    function formatInstitutionLocation(institution) {
+        const city = String(institution?.city || '').trim();
+        const state = String(institution?.state || '').trim();
+        const country = String(institution?.country || '').trim();
+        return [city, state, country].filter(Boolean).join(', ') || '-';
+    }
+
+    function formatRoleLabel(role) {
+        const value = String(role || '').trim().toLowerCase();
+        if (value === 'superadmin') return 'Superadmin';
+        if (value === 'admin') return 'Admin (Platform)';
+        if (value === 'institution_admin') return 'Institution Admin';
+        if (value === 'institution_user') return 'Institution User';
+        if (value === 'teacher') return 'Teacher';
+        return role || '-';
+    }
+
+    function updateInstitutionLogoPreview(url) {
+        const img = document.getElementById('institutionLogoPreview');
+        const placeholder = document.getElementById('institutionLogoPlaceholder');
+        if (!img || !placeholder) return;
+
+        const src = String(url || '').trim();
+        if (!src) {
+            img.removeAttribute('src');
+            img.classList.add('hidden');
+            placeholder.textContent = 'No logo URL configured';
+            placeholder.classList.remove('hidden');
+            return;
+        }
+
+        const isSupportedSource =
+            /^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(src) ||
+            /^https?:\/\//i.test(src) ||
+            src.startsWith('/');
+
+        if (!isSupportedSource) {
+            img.removeAttribute('src');
+            img.classList.add('hidden');
+            placeholder.textContent = 'Invalid logo URL';
+            placeholder.classList.remove('hidden');
+            return;
+        }
+
+        placeholder.textContent = 'Loading logo...';
+        placeholder.classList.remove('hidden');
+        img.classList.add('hidden');
+
+        img.onload = () => {
+            img.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+        };
+        img.onerror = () => {
+            img.removeAttribute('src');
+            img.classList.add('hidden');
+            placeholder.textContent = 'Could not load logo';
+            placeholder.classList.remove('hidden');
+        };
+        img.src = src;
+    }
+
+    function populateInstitutionDetails(institutionId = getActiveInstitutionId()) {
+        const institution = getInstitutionById(institutionId);
+        const fields = {
+            institutionDetailName: institution?.name || '',
+            institutionDetailCode: institution?.code || '',
+            institutionDetailShortName: institution?.shortName || '',
+            institutionDetailType: institution?.type || 'university',
+            institutionDetailWebsite: institution?.website || '',
+            institutionDetailLogoUrl: institution?.logoUrl || '',
+            institutionDetailContactEmail: institution?.contactEmail || '',
+            institutionDetailContactPhone: institution?.contactPhone || '',
+            institutionDetailCountry: institution?.country || '',
+            institutionDetailState: institution?.state || '',
+            institutionDetailCity: institution?.city || '',
+            institutionDetailPostalCode: institution?.postalCode || '',
+            institutionDetailAddressLine1: institution?.addressLine1 || '',
+            institutionDetailAddressLine2: institution?.addressLine2 || '',
+            institutionDetailTimezone: institution?.timezone || 'UTC',
+            institutionDetailTermSystem: institution?.termSystem || 'semester',
+            institutionDetailAcademicYearLabel: institution?.academicYearLabel || '',
+            institutionDetailGradingScale: institution?.gradingScale || ''
+        };
+
+        Object.entries(fields).forEach(([id, value]) => {
+            const input = document.getElementById(id);
+            if (!input) return;
+            input.value = value;
+        });
+
+        const activeCheckbox = document.getElementById('institutionDetailIsActive');
+        if (activeCheckbox) {
+            activeCheckbox.checked = institution ? institution.isActive !== false : true;
+        }
+
+        updateInstitutionLogoPreview(institution?.logoUrl || '');
+    }
+
+    function readInstitutionProfilePayloadFromForm() {
+        const getValue = (id) => document.getElementById(id)?.value?.trim() || '';
+        return {
+            name: getValue('institutionDetailName'),
+            code: getValue('institutionDetailCode'),
+            shortName: getValue('institutionDetailShortName'),
+            type: getValue('institutionDetailType') || 'university',
+            website: getValue('institutionDetailWebsite'),
+            logoUrl: getValue('institutionDetailLogoUrl'),
+            contactEmail: getValue('institutionDetailContactEmail'),
+            contactPhone: getValue('institutionDetailContactPhone'),
+            country: getValue('institutionDetailCountry'),
+            state: getValue('institutionDetailState'),
+            city: getValue('institutionDetailCity'),
+            postalCode: getValue('institutionDetailPostalCode'),
+            addressLine1: getValue('institutionDetailAddressLine1'),
+            addressLine2: getValue('institutionDetailAddressLine2'),
+            timezone: getValue('institutionDetailTimezone') || 'UTC',
+            termSystem: getValue('institutionDetailTermSystem') || 'semester',
+            academicYearLabel: getValue('institutionDetailAcademicYearLabel'),
+            gradingScale: getValue('institutionDetailGradingScale'),
+            isActive: document.getElementById('institutionDetailIsActive')?.checked !== false
+        };
+    }
+
+    function fileToDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function renderInstitutionsTable() {
+        const tableBody = document.getElementById('institutionsTable');
+        if (!tableBody) return;
+
+        const rows = dashboardState.institutions.rows || [];
+        if (!rows.length) {
+            tableBody.innerHTML = '<tr><td colspan="5" class="px-3 py-2 border text-center text-gray-500">No institutions configured yet</td></tr>';
+            return;
+        }
+
+        const activeId = getActiveInstitutionId();
+        tableBody.innerHTML = rows.map((institution) => {
+            const rowClass = institution.id === activeId ? 'bg-blue-50' : '';
+            return `
+                <tr class="${rowClass}">
+                    <td class="px-3 py-2 border">${escapeHtml(institution.name || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(institution.code || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(formatInstitutionType(institution.type))}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(formatInstitutionLocation(institution))}</td>
+                    <td class="px-3 py-2 border">${institution.isActive ? 'ACTIVE' : 'INACTIVE'}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function updateStaffBadge() {
+        const staffBadge = document.getElementById('staffBadge');
+        if (!staffBadge || !authUser) return;
+        const institutionLabel = getActiveInstitutionLabel();
+        staffBadge.textContent = institutionLabel
+            ? `${authUser.role.toUpperCase()} • ${authUser.name} • ${institutionLabel}`
+            : `${authUser.role.toUpperCase()} • ${authUser.name}`;
+        staffBadge.classList.remove('hidden');
+    }
+
+    function renderInstitutionOptions() {
+        const institutionSelect = document.getElementById('institutionSelect');
+        const staffInstitutionSelect = document.getElementById('staffInstitutionSelect');
+        const activeId = getActiveInstitutionId();
+        const rows = dashboardState.institutions.rows || [];
+        const isAllContext = isGlobalAdmin && dashboardState.institutions.viewAll;
+
+        if (institutionSelect) {
+            if (!rows.length) {
+                institutionSelect.innerHTML = '<option value="">No institutions</option>';
+                institutionSelect.disabled = true;
+            } else {
+                institutionSelect.disabled = false;
+                const options = [];
+                if (isGlobalAdmin) {
+                    options.push(`<option value="${ALL_INSTITUTIONS_VALUE}">All Institutions (Global View)</option>`);
+                }
+                options.push(
+                    ...rows.map((institution) => `<option value="${institution.id}">${escapeHtml(institution.name)} (${escapeHtml(institution.code || '-')})</option>`)
+                );
+                institutionSelect.innerHTML = options.join('');
+                if (isAllContext && isGlobalAdmin) {
+                    institutionSelect.value = ALL_INSTITUTIONS_VALUE;
+                } else if (rows.some((institution) => institution.id === activeId)) {
+                    institutionSelect.value = activeId;
+                } else if (isGlobalAdmin) {
+                    institutionSelect.value = ALL_INSTITUTIONS_VALUE;
+                }
+            }
+        }
+
+        if (staffInstitutionSelect) {
+            if (!rows.length) {
+                staffInstitutionSelect.innerHTML = '<option value="">Institution</option>';
+                staffInstitutionSelect.disabled = true;
+            } else {
+                staffInstitutionSelect.disabled = false;
+                staffInstitutionSelect.innerHTML = rows
+                    .map((institution) => `<option value="${institution.id}">${escapeHtml(institution.name)}</option>`)
+                    .join('');
+                if (rows.some((institution) => institution.id === activeId)) {
+                    staffInstitutionSelect.value = activeId;
+                }
+            }
+        }
+
+        const canSwitchInstitution = isGlobalAdmin;
+        const canCreateInstitution = canCreateInstitutions;
+        const canEditInstitution = canManageInstitutionProfile;
+        const switchControl = document.getElementById('institutionSelect');
+        if (switchControl && !canSwitchInstitution) {
+            switchControl.disabled = true;
+        }
+
+        const createOnlyControls = [
+            document.getElementById('newInstitutionName'),
+            document.getElementById('newInstitutionCode'),
+            document.getElementById('newInstitutionType'),
+            document.getElementById('newInstitutionCountry'),
+            document.getElementById('newInstitutionCity'),
+            document.getElementById('createInstitutionBtn'),
+            document.getElementById('staffInstitutionSelect'),
+        ];
+        createOnlyControls.forEach((element) => {
+            if (!element) return;
+            element.disabled = !canCreateInstitution;
+        });
+
+        const refreshControl = document.getElementById('refreshInstitutionsBtn');
+        if (refreshControl) {
+            refreshControl.disabled = !canEditInstitution;
+        }
+
+        const detailControls = [
+            document.getElementById('institutionDetailName'),
+            document.getElementById('institutionDetailCode'),
+            document.getElementById('institutionDetailShortName'),
+            document.getElementById('institutionDetailType'),
+            document.getElementById('institutionDetailWebsite'),
+            document.getElementById('institutionDetailLogoUrl'),
+            document.getElementById('institutionLogoFile'),
+            document.getElementById('uploadInstitutionLogoBtn'),
+            document.getElementById('institutionDetailContactEmail'),
+            document.getElementById('institutionDetailContactPhone'),
+            document.getElementById('institutionDetailCountry'),
+            document.getElementById('institutionDetailState'),
+            document.getElementById('institutionDetailCity'),
+            document.getElementById('institutionDetailPostalCode'),
+            document.getElementById('institutionDetailAddressLine1'),
+            document.getElementById('institutionDetailAddressLine2'),
+            document.getElementById('institutionDetailTimezone'),
+            document.getElementById('institutionDetailTermSystem'),
+            document.getElementById('institutionDetailAcademicYearLabel'),
+            document.getElementById('institutionDetailGradingScale'),
+            document.getElementById('institutionDetailIsActive'),
+            document.getElementById('saveInstitutionBtn')
+        ];
+        detailControls.forEach((element) => {
+            if (!element) return;
+            element.disabled = !canEditInstitution || isAllContext;
+        });
+
+        renderInstitutionsTable();
+        populateInstitutionDetails(isAllContext ? '' : activeId);
+    }
+
+    function applyAllInstitutionsContext() {
+        if (!isGlobalAdmin) return;
+        dashboardState.institutions.viewAll = true;
+        dashboardState.institutions.activeId = '';
+        localStorage.setItem(INSTITUTION_SCOPE_KEY, 'all');
+        localStorage.removeItem('activeInstitutionId');
+        localStorage.removeItem('activeInstitutionName');
+        renderInstitutionOptions();
+        updateStaffBadge();
+    }
+
+    function applyInstitutionContext(institutionId) {
+        const resolved = String(institutionId || '').trim();
+        if (!resolved) return;
+        dashboardState.institutions.viewAll = false;
+        dashboardState.institutions.activeId = resolved;
+        localStorage.setItem(INSTITUTION_SCOPE_KEY, 'single');
+        localStorage.setItem('activeInstitutionId', resolved);
+        const activeInstitution = dashboardState.institutions.rows.find((row) => row.id === resolved);
+        if (activeInstitution?.name) {
+            localStorage.setItem('activeInstitutionName', activeInstitution.name);
+        }
+        renderInstitutionOptions();
+        populateInstitutionDetails(resolved);
+        updateStaffBadge();
+    }
+
+    function applyRoleAccessControls() {
+        const takeAttendanceLink = document.getElementById('takeAttendanceLink');
+        if (takeAttendanceLink && authUser?.role !== 'teacher') {
+            takeAttendanceLink.classList.add('hidden');
+        }
+
+        const openStaffCreatePageBtn = document.getElementById('openStaffCreatePageBtn');
+        if (openStaffCreatePageBtn) {
+            openStaffCreatePageBtn.disabled = !canManageStaff;
+        }
+
+        const academicWriteControls = [
+            'openCourseCreatePageBtn',
+            'assignmentTeacherSelect',
+            'assignmentCourseSelect',
+            'assignTeacherBtn',
+            'enrollmentBulkInput',
+            'saveEnrollmentsBtn',
+            'replaceEnrollmentsBtn',
+            'enrollmentFileInput',
+            'parseEnrollmentFileBtn'
+        ];
+        academicWriteControls.forEach((id) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.disabled = !canManageAcademic;
+        });
+
+        document.querySelectorAll('.courseDayInput').forEach((checkbox) => {
+            checkbox.disabled = !canManageAcademic;
+        });
+    }
+
+    function upsertInstitutionRow(institution) {
+        if (!institution?.id) return;
+        const current = dashboardState.institutions.rows || [];
+        const index = current.findIndex((row) => row.id === institution.id);
+        if (index >= 0) {
+            current[index] = institution;
+        } else {
+            current.push(institution);
+        }
+        dashboardState.institutions.rows = current.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    }
+
+    async function loadInstitutions({ preserveActive = true } = {}) {
+        try {
+            const response = await axios.get(`${API_BASE}/api/auth/institutions`);
+            const rows = response.data?.data || [];
+            dashboardState.institutions.rows = rows;
+
+            const preserveAll = preserveActive && isGlobalAdmin && dashboardState.institutions.viewAll;
+            if (preserveAll) {
+                renderInstitutionOptions();
+                setInstitutionMessage('Global view active: All Institutions.', 'info');
+                return;
+            }
+
+            const currentActive = preserveActive ? getActiveInstitutionId() : '';
+            let nextActive = currentActive;
+            if (!rows.some((row) => row.id === nextActive)) {
+                nextActive = rows[0]?.id || '';
+            }
+
+            if (nextActive) {
+                applyInstitutionContext(nextActive);
+                setInstitutionMessage(`Institution active: ${rows.find((row) => row.id === nextActive)?.name || '-'}`, 'info');
+            } else if (isGlobalAdmin) {
+                applyAllInstitutionsContext();
+                setInstitutionMessage('No specific institution selected. Global view enabled.', 'info');
+            } else {
+                setInstitutionMessage('No institutions configured yet.', 'error');
+            }
+        } catch (error) {
+            setInstitutionMessage(error.response?.data?.message || 'Failed to load institutions.', 'error');
+        } finally {
+            renderInstitutionOptions();
+        }
+    }
+
+    function getCurrentReturnTo() {
+        return `${window.location.pathname}${window.location.search}`;
+    }
+
+    function openInstitutionEditor(mode = 'edit') {
+        const base = 'institution-editor.html';
+        const returnTo = getCurrentReturnTo();
+        if (mode === 'create') {
+            if (!canCreateInstitutions) {
+                setInstitutionMessage('You do not have permissions to create institutions.', 'error');
+                return;
+            }
+            const params = new URLSearchParams();
+            params.set('mode', 'create');
+            params.set('returnTo', returnTo);
+            window.location.href = `${base}?${params.toString()}`;
+            return;
+        }
+
+        if (isGlobalAdmin && dashboardState.institutions.viewAll) {
+            setInstitutionMessage('Select one institution first to open its page.', 'error');
+            return;
+        }
+
+        const institutionId = getActiveInstitutionId();
+        if (!institutionId) {
+            setInstitutionMessage('Select an institution first.', 'error');
+            return;
+        }
+        const params = new URLSearchParams();
+        params.set('institutionId', institutionId);
+        params.set('returnTo', returnTo);
+        window.location.href = `${base}?${params.toString()}`;
+    }
+
+    async function saveInstitutionProfile() {
+        if (!canManageInstitutionProfile) {
+            setInstitutionMessage('You do not have permissions to edit institutions.', 'error');
+            return;
+        }
+        const institutionId = getActiveInstitutionId();
+        if (!institutionId) {
+            setInstitutionMessage('Select an institution first.', 'error');
+            return;
+        }
+
+        const payload = readInstitutionProfilePayloadFromForm();
+        if (!payload.name) {
+            setInstitutionMessage('Institution name is required.', 'error');
+            return;
+        }
+
+        try {
+            const response = await axios.patch(`${API_BASE}/api/auth/institutions/${institutionId}`, payload);
+            const updated = response.data?.data || null;
+            if (updated) {
+                upsertInstitutionRow(updated);
+                applyInstitutionContext(updated.id);
+            }
+            setInstitutionMessage('Institution profile saved.', 'success');
+        } catch (error) {
+            setInstitutionMessage(error.response?.data?.message || 'Failed to save institution profile.', 'error');
+        }
+    }
+
+    async function uploadInstitutionLogo() {
+        if (!canManageInstitutionProfile) {
+            setInstitutionMessage('You do not have permissions to upload institution logo.', 'error');
+            return;
+        }
+        const institutionId = getActiveInstitutionId();
+        if (!institutionId) {
+            setInstitutionMessage('Select an institution first.', 'error');
+            return;
+        }
+
+        const input = document.getElementById('institutionLogoFile');
+        const file = input?.files?.[0];
+        if (!file) {
+            setInstitutionMessage('Choose a logo file first.', 'error');
+            return;
+        }
+
+        const allowedTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
+        if (!allowedTypes.has(file.type)) {
+            setInstitutionMessage('Only PNG, JPEG or WEBP are supported.', 'error');
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            setInstitutionMessage('Logo file must be 2MB or less.', 'error');
+            return;
+        }
+
+        try {
+            const dataUrl = await fileToDataUrl(file);
+            const response = await axios.post(
+                `${API_BASE}/api/auth/institutions/${institutionId}/logo-upload`,
+                {
+                    fileName: file.name,
+                    dataUrl
+                }
+            );
+            const updated = response.data?.data || null;
+            if (updated) {
+                upsertInstitutionRow(updated);
+                applyInstitutionContext(updated.id);
+                const logoUrlInput = document.getElementById('institutionDetailLogoUrl');
+                if (logoUrlInput) {
+                    logoUrlInput.value = updated.logoUrl || '';
+                }
+                updateInstitutionLogoPreview(updated.logoUrl || '');
+            }
+            if (input) {
+                input.value = '';
+            }
+            setInstitutionMessage('Institution logo uploaded.', 'success');
+        } catch (error) {
+            setInstitutionMessage(error.response?.data?.message || 'Failed to upload institution logo.', 'error');
+        }
+    }
+
+    function formatCourseDays(daysOfWeek) {
+        if (!Array.isArray(daysOfWeek) || !daysOfWeek.length) return '';
+        const dayLabels = {
+            MON: 'Mon',
+            TUE: 'Tue',
+            WED: 'Wed',
+            THU: 'Thu',
+            FRI: 'Fri',
+            SAT: 'Sat',
+            SUN: 'Sun'
+        };
+        return daysOfWeek.map((day) => dayLabels[day] || day).join('/');
+    }
+
+    function formatCourseSchedule(course) {
+        const days = formatCourseDays(course.daysOfWeek);
+        if (!days || !course.startTime || !course.endTime) {
+            return 'Not configured';
+        }
+        return `${days} ${course.startTime}-${course.endTime}`;
+    }
+
+    function formatDeliveryModeLabel(value) {
+        const mode = String(value || '').trim().toLowerCase();
+        if (mode === 'online') return 'Online';
+        if (mode === 'hybrid') return 'Hybrid';
+        return 'In Person';
+    }
+
+    function formatCoursePolicySummary(course) {
+        const policy = course?.attendancePolicy || {};
+        const tags = [];
+        if (policy.singleDevicePerDay !== false) tags.push('1 device/day');
+        if (policy.requireEnrollment !== false) tags.push('enrollment');
+        if (policy.requireSignature !== false) tags.push('signature');
+        if (policy.requireIpAllowlist === true) tags.push('ip');
+        if (policy.requireGeofence === true) tags.push('geofence');
+        if (!tags.length) return 'Standard';
+        return tags.join(' • ');
+    }
+
+    function buildStaffEditorUrl(mode = 'create', userId = '', institutionId = '', returnInstitutionId = '', returnTo = '') {
+        const params = new URLSearchParams();
+        if (mode === 'edit' && userId) {
+            params.set('mode', 'edit');
+            params.set('userId', String(userId));
+        }
+        if (institutionId) {
+            params.set('institutionId', String(institutionId));
+        }
+        if (returnInstitutionId) {
+            params.set('returnInstitutionId', String(returnInstitutionId));
+        }
+        if (returnTo) {
+            params.set('returnTo', String(returnTo));
+        }
+        const query = params.toString();
+        return `staff-editor.html${query ? `?${query}` : ''}`;
+    }
+
+    function buildStaffViewUrl(userId = '', institutionId = '', returnInstitutionId = '', returnTo = '') {
+        const params = new URLSearchParams();
+        if (userId) {
+            params.set('userId', String(userId));
+        }
+        if (institutionId) {
+            params.set('institutionId', String(institutionId));
+        }
+        if (returnInstitutionId) {
+            params.set('returnInstitutionId', String(returnInstitutionId));
+        }
+        if (returnTo) {
+            params.set('returnTo', String(returnTo));
+        }
+        const query = params.toString();
+        return `staff-view.html${query ? `?${query}` : ''}`;
+    }
+
+    function renderStaffUsers(users) {
+        const tableBody = document.getElementById('staffUsersTable');
+        if (!tableBody) return;
+
+        if (!users.length) {
+            tableBody.innerHTML = '<tr><td colspan="6" class="px-3 py-2 border text-center text-gray-500">No staff users yet</td></tr>';
+            return;
+        }
+
+        tableBody.innerHTML = users.map((user) => {
+            const rowInstitutionId = String(user.institutionId || '');
+            const returnInstitutionId = (isGlobalAdmin && dashboardState.institutions.viewAll)
+                ? ALL_INSTITUTIONS_VALUE
+                : (rowInstitutionId || getActiveInstitutionId());
+            const returnTo = getCurrentReturnTo();
+            const viewAction = user.id
+                ? `<a href="${buildStaffViewUrl(user.id, rowInstitutionId, returnInstitutionId, returnTo)}" class="inline-flex items-center bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors">View</a>`
+                : '<span class="text-xs text-gray-400">N/A</span>';
+            const editAction = canManageStaff && user.id
+                ? `<a href="${buildStaffEditorUrl('edit', user.id, rowInstitutionId, returnInstitutionId, returnTo)}" class="inline-flex items-center bg-white text-gray-800 border border-gray-300 px-3 py-1 rounded hover:bg-gray-100 transition-colors">Edit</a>`
+                : '<span class="text-xs text-gray-400">Read only</span>';
+            return `
+                <tr>
+                    <td class="px-3 py-2 border">${escapeHtml(user.name || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(user.email || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(user.institution?.name || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(formatRoleLabel(user.role))}</td>
+                    <td class="px-3 py-2 border">${user.isActive ? 'ACTIVE' : 'INACTIVE'}</td>
+                    <td class="px-3 py-2 border"><div class="flex items-center gap-2">${viewAction}${editAction}</div></td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function formatCourseProgramLabel(course) {
+        const program = (course.program || 'General').trim();
+        const version = (course.programVersion || '1').trim();
+        return `${program} v${version}`;
+    }
+
+    function renderCourses(courses) {
+        const tableBody = document.getElementById('coursesTable');
+        if (!tableBody) return;
+
+        if (!courses.length) {
+            tableBody.innerHTML = '<tr><td colspan="10" class="px-3 py-2 border text-center text-gray-500">No courses yet</td></tr>';
+            return;
+        }
+
+        tableBody.innerHTML = courses.map((course) => {
+            const rowInstitutionId = String(course.institutionId || '');
+            const editAction = canManageAcademic
+                ? `<button type="button" onclick="openCourseEditor('edit', '${course.id}', '${rowInstitutionId}')" class="inline-flex items-center bg-white text-gray-800 border border-gray-300 px-3 py-1 rounded hover:bg-gray-100 transition-colors">Edit</button>`
+                : '<span class="text-xs text-gray-400">Read only</span>';
+
+            return `
+                <tr>
+                    <td class="px-3 py-2 border">${escapeHtml(course.program || 'General')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(course.programVersion || '1')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(course.code || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(course.name || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(course.section || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(course.academicYear || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(formatDeliveryModeLabel(course.deliveryMode))}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(formatCourseSchedule(course))}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(formatCoursePolicySummary(course))}</td>
+                    <td class="px-3 py-2 border">${editAction}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function renderAssignments(assignments) {
+        const tableBody = document.getElementById('assignmentTable');
+        if (!tableBody) return;
+
+        if (!assignments.length) {
+            tableBody.innerHTML = '<tr><td colspan="4" class="px-3 py-2 border text-center text-gray-500">No assignments yet</td></tr>';
+            return;
+        }
+
+        tableBody.innerHTML = assignments
+            .filter((assignment) => assignment.teacher && assignment.course)
+            .map((assignment) => `
+                <tr>
+                    <td class="px-3 py-2 border">${escapeHtml(assignment.teacher.name || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(assignment.teacher.email || '-')}</td>
+                    <td class="px-3 py-2 border">[${escapeHtml(formatCourseProgramLabel(assignment.course))}] ${escapeHtml(assignment.course.code || '-')} - ${escapeHtml(assignment.course.name || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(assignment.course.section || '-')}</td>
+                </tr>
+            `)
+            .join('');
+    }
+
+    function renderEnrollmentRows(rows) {
+        const tableBody = document.getElementById('enrollmentTable');
+        if (!tableBody) return;
+
+        if (!rows.length) {
+            tableBody.innerHTML = '<tr><td colspan="5" class="px-3 py-2 border text-center text-gray-500">No enrollments yet</td></tr>';
+            return;
+        }
+
+        tableBody.innerHTML = rows
+            .map((row) => `
+                <tr>
+                    <td class="px-3 py-2 border">${escapeHtml(row.universityRollNo || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(row.fullName || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(row.section || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(row.classRollNo || '-')}</td>
+                    <td class="px-3 py-2 border">${row.isActive ? 'ACTIVE' : 'INACTIVE'}</td>
+                </tr>
+            `)
+            .join('');
+    }
+
+    function renderTeacherSelect(teachers) {
+        const teacherSelect = document.getElementById('assignmentTeacherSelect');
+        if (!teacherSelect) return;
+
+        const previousValue = teacherSelect.value;
+        if (!teachers.length) {
+            teacherSelect.innerHTML = '<option value="">No teachers available</option>';
+            teacherSelect.disabled = true;
+            return;
+        }
+
+        teacherSelect.disabled = false;
+        teacherSelect.innerHTML = teachers
+            .map((teacher) => `<option value="${teacher.id}">${escapeHtml(teacher.name || '-')} (${escapeHtml(teacher.email || '-')})</option>`)
+            .join('');
+
+        if (teachers.some((teacher) => teacher.id === previousValue)) {
+            teacherSelect.value = previousValue;
+        }
+    }
+
+    function renderProgramFilterSelect(selectId, programs, selectedProgram = '') {
+        const select = document.getElementById(selectId);
+        if (!select) return;
+
+        const previousValue = selectedProgram || select.value || '';
+        const options = ['<option value="">All programs</option>'];
+
+        (Array.isArray(programs) ? programs : []).forEach((row) => {
+            const program = String(row?.program || 'General');
+            const versions = Array.isArray(row?.versions) ? row.versions : [];
+            const versionLabels = versions
+                .map((v) => String(v?.programVersion || '1'))
+                .filter(Boolean)
+                .join(', ');
+            const count = Number(row?.totalCourses || 0);
+            const label = versionLabels
+                ? program + ' (' + count + ') • v' + versionLabels
+                : program + ' (' + count + ')';
+            options.push('<option value="' + escapeHtml(program) + '">' + escapeHtml(label) + '</option>');
+        });
+
+        select.innerHTML = options.join('');
+        if (Array.from(select.options).some((option) => option.value === previousValue)) {
+            select.value = previousValue;
+        }
+    }
+
+    async function loadProgramFilters() {
+        const includeAll = isGlobalAdmin && dashboardState.institutions.viewAll;
+        try {
+            const response = await axios.get(`${API_BASE}/api/academic/programs`, {
+                params: {
+                    active: 'true',
+                    includeAll: includeAll ? 'true' : undefined
+                }
+            });
+            const programs = response.data?.data || [];
+            renderProgramFilterSelect('courseProgramFilterSelect', programs, dashboardState.courses.program);
+            renderProgramFilterSelect('assignmentCourseProgramFilterSelect', programs, dashboardState.assignmentCoursePicker.program);
+            renderProgramFilterSelect('enrollmentCourseProgramFilterSelect', programs, dashboardState.enrollmentCoursePicker.program);
+        } catch (error) {
+            setCourseMessage(error.response?.data?.message || 'Failed to load program filters.', 'error');
+        }
+    }
+
+    function renderCourseSelect(courses) {
+        const courseSelect = document.getElementById('assignmentCourseSelect');
+        if (!courseSelect) return;
+
+        const previousValue = courseSelect.value;
+        if (!courses.length) {
+            courseSelect.innerHTML = '<option value="">No courses available</option>';
+            courseSelect.disabled = true;
+            return;
+        }
+
+        courseSelect.disabled = false;
+        courseSelect.innerHTML = courses
+            .map((course) => `<option value="${course.id}">[${escapeHtml(formatCourseProgramLabel(course))}] ${escapeHtml(course.code || '-')} - ${escapeHtml(course.name || '-')} (Section ${escapeHtml(course.section || '-')}) | ${escapeHtml(formatCourseSchedule(course))}</option>` )
+            .join('');
+
+        if (courses.some((course) => course.id === previousValue)) {
+            courseSelect.value = previousValue;
+        }
+    }
+
+    function renderEnrollmentCourseSelect(courses) {
+        const courseSelect = document.getElementById('enrollmentCourseSelect');
+        if (!courseSelect) return;
+
+        const previousValue = courseSelect.value;
+        if (!courses.length) {
+            courseSelect.innerHTML = '<option value="">No courses available</option>';
+            courseSelect.disabled = true;
+            return;
+        }
+
+        courseSelect.disabled = false;
+        courseSelect.innerHTML = courses
+            .map((course) => `<option value="${course.id}">[${escapeHtml(formatCourseProgramLabel(course))}] ${escapeHtml(course.code || '-')} - ${escapeHtml(course.name || '-')} (Section ${escapeHtml(course.section || '-')}) | ${escapeHtml(formatCourseSchedule(course))}</option>` )
+            .join('');
+
+        if (courses.some((course) => course.id === previousValue)) {
+            courseSelect.value = previousValue;
+        }
+    }
+
+    async function loadStaffUsers({ reset = false } = {}) {
+        const state = dashboardState.staff;
+        if (reset) state.page = 1;
+        const includeAll = isGlobalAdmin && dashboardState.institutions.viewAll;
+
+        try {
+            const response = await axios.get(`${API_BASE}/api/auth/users`, {
+                params: {
+                    page: state.page,
+                    limit: state.limit,
+                    q: state.q,
+                    includeAll: includeAll ? 'true' : undefined
+                }
+            });
+
+            const rows = response.data?.data || [];
+            const meta = parsePaginationMeta(response.data, state.page, state.limit);
+            state.page = meta.page;
+            state.total = meta.total;
+            state.totalPages = meta.totalPages;
+            state.hasNext = meta.hasNext;
+
+            renderStaffUsers(rows);
+            updatePager('staff', meta);
+            const scopeLabel = includeAll ? 'all institutions' : (getActiveInstitutionLabel() || 'selected institution');
+            setStaffMessage(`Showing ${rows.length} of ${meta.total} users (${scopeLabel}).`, 'info');
+        } catch (error) {
+            setStaffMessage(error.response?.data?.message || 'Failed to load staff users.', 'error');
+        }
+    }
+
+    async function loadCoursesCatalog({ reset = false } = {}) {
+        const state = dashboardState.courses;
+        if (reset) state.page = 1;
+        const includeAll = isGlobalAdmin && dashboardState.institutions.viewAll;
+
+        try {
+            const response = await axios.get(`${API_BASE}/api/academic/courses`, {
+                params: {
+                    page: state.page,
+                    limit: state.limit,
+                    q: state.q,
+                    program: state.program,
+                    includeAll: includeAll ? 'true' : undefined
+                }
+            });
+
+            const rows = response.data?.data || [];
+            const meta = parsePaginationMeta(response.data, state.page, state.limit);
+            state.page = meta.page;
+            state.total = meta.total;
+            state.totalPages = meta.totalPages;
+            state.hasNext = meta.hasNext;
+
+            renderCourses(rows);
+            updatePager('course', meta);
+            const scopeLabel = includeAll ? 'all institutions' : (getActiveInstitutionLabel() || 'selected institution');
+            setCourseMessage(`Showing ${rows.length} of ${meta.total} courses (${scopeLabel}).`, 'info');
+        } catch (error) {
+            setCourseMessage(error.response?.data?.message || 'Failed to load courses.', 'error');
+        }
+    }
+
+    async function loadAssignments({ reset = false } = {}) {
+        const state = dashboardState.assignments;
+        if (reset) state.page = 1;
+
+        try {
+            const response = await axios.get(`${API_BASE}/api/academic/assignments`, {
+                params: {
+                    page: state.page,
+                    limit: state.limit,
+                    q: state.q,
+                    active: 'true'
+                }
+            });
+
+            const rows = response.data?.data || [];
+            const meta = parsePaginationMeta(response.data, state.page, state.limit);
+            state.page = meta.page;
+            state.total = meta.total;
+            state.totalPages = meta.totalPages;
+            state.hasNext = meta.hasNext;
+
+            renderAssignments(rows);
+            updatePager('assignment', meta);
+            setAssignmentMessage(`Showing ${rows.length} of ${meta.total} assignments.`, 'info');
+        } catch (error) {
+            setAssignmentMessage(error.response?.data?.message || 'Failed to load assignments.', 'error');
+        }
+    }
+
+    async function loadTeacherPicker({ reset = false, append = false } = {}) {
+        const state = dashboardState.teacherPicker;
+        if (reset) {
+            state.page = 1;
+            state.rows = [];
+        }
+        if (append) {
+            if (!state.hasNext) return;
+            state.page += 1;
+        }
+
+        try {
+            const response = await axios.get(`${API_BASE}/api/academic/teachers`, {
+                params: {
+                    page: state.page,
+                    limit: state.limit,
+                    q: state.q,
+                    active: 'true'
+                }
+            });
+
+            const rows = (response.data?.data || []).filter((user) => user.isActive);
+            const meta = parsePaginationMeta(response.data, state.page, state.limit);
+            state.hasNext = meta.hasNext;
+            state.page = meta.page;
+            state.rows = append ? [...state.rows, ...rows] : rows;
+
+            const uniqueRows = [];
+            const seen = new Set();
+            state.rows.forEach((row) => {
+                if (!row?.id || seen.has(row.id)) return;
+                seen.add(row.id);
+                uniqueRows.push(row);
+            });
+            state.rows = uniqueRows;
+
+            renderTeacherSelect(state.rows);
+            setLoadMoreState('assignmentTeacherMoreBtn', state.hasNext, 'Load more teachers');
+        } catch (error) {
+            if (append) state.page = Math.max(1, state.page - 1);
+            setAssignmentMessage(error.response?.data?.message || 'Failed to load teachers.', 'error');
+        }
+    }
+
+    async function loadCoursePicker(kind, { reset = false, append = false } = {}) {
+        const isAssignment = kind === 'assignment';
+        const state = isAssignment ? dashboardState.assignmentCoursePicker : dashboardState.enrollmentCoursePicker;
+
+        if (reset) {
+            state.page = 1;
+            state.rows = [];
+        }
+        if (append) {
+            if (!state.hasNext) return;
+            state.page += 1;
+        }
+
+        try {
+            const response = await axios.get(`${API_BASE}/api/academic/courses`, {
+                params: {
+                    page: state.page,
+                    limit: state.limit,
+                    q: state.q,
+                    program: state.program,
+                    active: 'true'
+                }
+            });
+
+            const rows = response.data?.data || [];
+            const meta = parsePaginationMeta(response.data, state.page, state.limit);
+            state.hasNext = meta.hasNext;
+            state.page = meta.page;
+            state.rows = append ? [...state.rows, ...rows] : rows;
+
+            const uniqueRows = [];
+            const seen = new Set();
+            state.rows.forEach((row) => {
+                if (!row?.id || seen.has(row.id)) return;
+                seen.add(row.id);
+                uniqueRows.push(row);
+            });
+            state.rows = uniqueRows;
+
+            if (isAssignment) {
+                renderCourseSelect(state.rows);
+                setLoadMoreState('assignmentCourseMoreBtn', state.hasNext, 'Load more courses');
+            } else {
+                const previousCourse = document.getElementById('enrollmentCourseSelect')?.value;
+                renderEnrollmentCourseSelect(state.rows);
+                setLoadMoreState('enrollmentCourseMoreBtn', state.hasNext, 'Load more courses');
+                const currentCourse = document.getElementById('enrollmentCourseSelect')?.value;
+                if (!previousCourse && currentCourse) {
+                    dashboardState.enrollments.page = 1;
+                    loadEnrollments({ reset: true });
+                }
+            }
+        } catch (error) {
+            if (append) state.page = Math.max(1, state.page - 1);
+            const message = error.response?.data?.message || 'Failed to load courses.';
+            if (isAssignment) {
+                setAssignmentMessage(message, 'error');
+            } else {
+                setEnrollmentMessage(message, 'error');
+            }
+        }
+    }
+
+    async function loadTeachers(opts = { reset: true }) {
+        await loadTeacherPicker(opts);
+    }
+
+    async function loadAssignmentCourseOptions(opts = { reset: true }) {
+        await loadCoursePicker('assignment', opts);
+    }
+
+    async function loadEnrollmentCourseOptions(opts = { reset: true }) {
+        await loadCoursePicker('enrollment', opts);
+    }
+
+    function openStaffEditor(mode = 'create', userId = '', institutionId = '') {
+        if (!canManageStaff) {
+            setStaffMessage('You have read-only access.', 'error');
+            return;
+        }
+
+        if (mode === 'edit' && !userId) {
+            setStaffMessage('User not selected for edit.', 'error');
+            return;
+        }
+
+        const resolvedInstitutionId = institutionId || getActiveInstitutionId();
+        const returnInstitutionId = (isGlobalAdmin && dashboardState.institutions.viewAll)
+            ? ALL_INSTITUTIONS_VALUE
+            : resolvedInstitutionId;
+        const returnTo = getCurrentReturnTo();
+        window.location.href = buildStaffEditorUrl(mode, userId, resolvedInstitutionId, returnInstitutionId, returnTo);
+    }
+
+    function openCourseEditor(mode = 'create', courseId = '', institutionId = '') {
+        if (!canManageAcademic) {
+            setCourseMessage('Read-only role: cannot manage courses.', 'error');
+            return;
+        }
+
+        if (mode === 'edit' && !courseId) {
+            setCourseMessage('Course not selected for edit.', 'error');
+            return;
+        }
+
+        const resolvedInstitutionId = institutionId || getActiveInstitutionId();
+        const params = new URLSearchParams();
+        const returnInstitutionId = (isGlobalAdmin && dashboardState.institutions.viewAll)
+            ? ALL_INSTITUTIONS_VALUE
+            : resolvedInstitutionId;
+        const returnTo = getCurrentReturnTo();
+        if (mode === 'edit' && courseId) {
+            params.set('mode', 'edit');
+            params.set('courseId', courseId);
+        }
+        if (resolvedInstitutionId) {
+            params.set('institutionId', resolvedInstitutionId);
+        }
+        if (returnInstitutionId) {
+            params.set('returnInstitutionId', returnInstitutionId);
+        }
+        params.set('returnTo', returnTo);
+        const query = params.toString();
+        window.location.href = `course-editor.html${query ? `?${query}` : ''}`;
+    }
+
+    function openAssignmentManager(institutionId = '') {
+        const resolvedInstitutionId = institutionId || getActiveInstitutionId();
+        const returnInstitutionId = (isGlobalAdmin && dashboardState.institutions.viewAll)
+            ? ALL_INSTITUTIONS_VALUE
+            : resolvedInstitutionId;
+        const returnTo = getCurrentReturnTo();
+        const params = new URLSearchParams();
+        if (resolvedInstitutionId) {
+            params.set('institutionId', resolvedInstitutionId);
+        }
+        if (returnInstitutionId) {
+            params.set('returnInstitutionId', returnInstitutionId);
+        }
+        params.set('returnTo', returnTo);
+        const query = params.toString();
+        window.location.href = `assignment-manager.html${query ? `?${query}` : ''}`;
+    }
+
+    async function assignTeacherToCourse() {
+        if (!canManageAcademic) {
+            setAssignmentMessage('Read-only role: cannot assign teachers.', 'error');
+            return;
+        }
+        const teacherId = document.getElementById('assignmentTeacherSelect')?.value;
+        const courseId = document.getElementById('assignmentCourseSelect')?.value;
+
+        if (!teacherId || !courseId) {
+            setAssignmentMessage('Choose a teacher and a course.', 'error');
+            return;
+        }
+
+        try {
+            await axios.post(`${API_BASE}/api/academic/assignments`, { teacherId, courseId });
+            setAssignmentMessage('Teacher assigned to course.', 'success');
+            await loadAssignments({ reset: true });
+            await loadAcademicKpis();
+        } catch (error) {
+            setAssignmentMessage(error.response?.data?.message || 'Failed to assign teacher.', 'error');
+        }
+    }
+
+    function parseEnrollmentBulkInput(rawText) {
+        const lines = String(rawText || '')
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        const rows = [];
+        const errors = [];
+
+        lines.forEach((line, index) => {
+            const parts = line.split(',').map((part) => part.trim());
+            if (parts.length < 4) {
+                errors.push(`Line ${index + 1}: expected 4 comma-separated values`);
+                return;
+            }
+
+            rows.push({
+                universityRollNo: parts[0],
+                fullName: parts[1],
+                section: parts[2],
+                classRollNo: parts[3]
+            });
+        });
+
+        return { rows, errors };
+    }
+
+    function applyEnrollmentSearch() {
+        dashboardState.enrollments.q = (document.getElementById('enrollmentSearchInput')?.value || '').trim();
+        dashboardState.enrollments.page = 1;
+        loadEnrollments({ reset: true });
+    }
+
+    async function loadEnrollments({ reset = false } = {}) {
+        const state = dashboardState.enrollments;
+        if (reset) state.page = 1;
+
+        const courseId = document.getElementById('enrollmentCourseSelect')?.value;
+        if (!courseId) {
+            renderEnrollmentRows([]);
+            updatePager('enrollment', { page: 1, totalPages: 1, total: 0, hasNext: false });
+            setEnrollmentMessage('Choose a course first.', 'error');
+            return;
+        }
+
+        try {
+            const response = await axios.get(`${API_BASE}/api/academic/courses/${courseId}/enrollments`, {
+                params: {
+                    page: state.page,
+                    limit: state.limit,
+                    q: state.q
+                }
+            });
+
+            const rows = response.data?.data || [];
+            const meta = parsePaginationMeta(response.data, state.page, state.limit);
+            state.page = meta.page;
+            state.total = meta.total;
+            state.totalPages = meta.totalPages;
+            state.hasNext = meta.hasNext;
+
+            renderEnrollmentRows(rows);
+            updatePager('enrollment', meta);
+            setEnrollmentMessage(`Showing ${rows.length} of ${meta.total} enrollments.`, 'info');
+        } catch (error) {
+            setEnrollmentMessage(error.response?.data?.message || 'Failed to load enrollments.', 'error');
+            renderEnrollmentRows([]);
+        }
+    }
+
+    async function saveEnrollments(replaceMode = false) {
+        if (!canManageAcademic) {
+            setEnrollmentMessage('Read-only role: cannot modify enrollments.', 'error');
+            return;
+        }
+        const courseId = document.getElementById('enrollmentCourseSelect')?.value;
+        if (!courseId) {
+            setEnrollmentMessage('Choose a course first.', 'error');
+            return;
+        }
+
+        const bulkText = document.getElementById('enrollmentBulkInput')?.value || '';
+        const { rows, errors } = parseEnrollmentBulkInput(bulkText);
+        if (errors.length) {
+            setEnrollmentMessage(errors[0], 'error');
+            return;
+        }
+        if (!rows.length) {
+            setEnrollmentMessage('Paste at least one enrollment row.', 'error');
+            return;
+        }
+
+        try {
+            const response = await axios.post(
+                `${API_BASE}/api/academic/courses/${courseId}/enrollments/bulk`,
+                { rows, replace: replaceMode }
+            );
+
+            const imported = response.data?.data?.imported || rows.length;
+            setEnrollmentMessage(
+                replaceMode
+                    ? `Roster replaced. Imported ${imported} students.`
+                    : `Imported ${imported} students.`,
+                'success'
+            );
+            await loadEnrollments({ reset: true });
+        } catch (error) {
+            const apiErrors = error.response?.data?.errors;
+            if (Array.isArray(apiErrors) && apiErrors.length) {
+                setEnrollmentMessage(`Row ${apiErrors[0].row}: ${apiErrors[0].message}`, 'error');
+                return;
+            }
+            setEnrollmentMessage(error.response?.data?.message || 'Failed to save enrollments.', 'error');
+        }
+    }
+
+    function bindPaginationControls() {
+        const mappings = [
+            {
+                prefix: 'staff',
+                state: dashboardState.staff,
+                reload: () => loadStaffUsers()
+            },
+            {
+                prefix: 'course',
+                state: dashboardState.courses,
+                reload: () => loadCoursesCatalog()
+            },
+            {
+                prefix: 'assignment',
+                state: dashboardState.assignments,
+                reload: () => loadAssignments()
+            },
+            {
+                prefix: 'enrollment',
+                state: dashboardState.enrollments,
+                reload: () => loadEnrollments()
+            }
+        ];
+
+        mappings.forEach(({ prefix, state, reload }) => {
+            const prevBtn = document.getElementById(`${prefix}PrevBtn`);
+            const nextBtn = document.getElementById(`${prefix}NextBtn`);
+
+            if (prevBtn && prevBtn.dataset.listenersBound !== 'true') {
+                prevBtn.dataset.listenersBound = 'true';
+                prevBtn.addEventListener('click', async () => {
+                    if (state.page <= 1) return;
+                    state.page -= 1;
+                    await reload();
+                });
+            }
+
+            if (nextBtn && nextBtn.dataset.listenersBound !== 'true') {
+                nextBtn.dataset.listenersBound = 'true';
+                nextBtn.addEventListener('click', async () => {
+                    if (!state.hasNext) return;
+                    state.page += 1;
+                    await reload();
+                });
+            }
+        });
+    }
+
+    function bindScalableFilters() {
+        const debouncedStaffSearch = debounce(() => {
+            dashboardState.staff.q = (document.getElementById('staffSearchInput')?.value || '').trim();
+            dashboardState.staff.page = 1;
+            loadStaffUsers({ reset: true });
+        }, 250);
+
+        const debouncedCourseSearch = debounce(() => {
+            dashboardState.courses.q = (document.getElementById('courseSearchInput')?.value || '').trim();
+            dashboardState.courses.page = 1;
+            loadCoursesCatalog({ reset: true });
+        }, 250);
+
+        const debouncedAssignmentSearch = debounce(() => {
+            dashboardState.assignments.q = (document.getElementById('assignmentSearchInput')?.value || '').trim();
+            dashboardState.assignments.page = 1;
+            loadAssignments({ reset: true });
+        }, 250);
+
+        const debouncedTeacherPickerSearch = debounce(() => {
+            dashboardState.teacherPicker.q = (document.getElementById('assignmentTeacherSearchInput')?.value || '').trim();
+            loadTeachers({ reset: true });
+        }, 250);
+
+        const debouncedAssignmentCoursePickerSearch = debounce(() => {
+            dashboardState.assignmentCoursePicker.q = (document.getElementById('assignmentCourseSearchInput')?.value || '').trim();
+            loadAssignmentCourseOptions({ reset: true });
+        }, 250);
+
+        const debouncedEnrollmentCoursePickerSearch = debounce(() => {
+            dashboardState.enrollmentCoursePicker.q = (document.getElementById('enrollmentCourseSearchInput')?.value || '').trim();
+            loadEnrollmentCourseOptions({ reset: true });
+        }, 250);
+
+        const debouncedCourseProgramFilter = debounce(() => {
+            const selectedProgram = (document.getElementById('courseProgramFilterSelect')?.value || '').trim();
+            dashboardState.courses.program = selectedProgram;
+            dashboardState.assignmentCoursePicker.program = selectedProgram;
+            dashboardState.enrollmentCoursePicker.program = selectedProgram;
+
+            const assignmentProgramSelect = document.getElementById('assignmentCourseProgramFilterSelect');
+            if (assignmentProgramSelect) assignmentProgramSelect.value = selectedProgram;
+            const enrollmentProgramSelect = document.getElementById('enrollmentCourseProgramFilterSelect');
+            if (enrollmentProgramSelect) enrollmentProgramSelect.value = selectedProgram;
+
+            dashboardState.courses.page = 1;
+            loadCoursesCatalog({ reset: true });
+            loadAssignmentCourseOptions({ reset: true });
+            loadEnrollmentCourseOptions({ reset: true });
+        }, 100);
+
+        const debouncedAssignmentCourseProgramFilter = debounce(() => {
+            dashboardState.assignmentCoursePicker.program = (document.getElementById('assignmentCourseProgramFilterSelect')?.value || '').trim();
+            loadAssignmentCourseOptions({ reset: true });
+        }, 100);
+
+        const debouncedEnrollmentCourseProgramFilter = debounce(() => {
+            dashboardState.enrollmentCoursePicker.program = (document.getElementById('enrollmentCourseProgramFilterSelect')?.value || '').trim();
+            loadEnrollmentCourseOptions({ reset: true });
+        }, 100);
+
+        const debouncedEnrollmentSearch = debounce(() => {
+            applyEnrollmentSearch();
+        }, 250);
+
+        const staffSearchInput = document.getElementById('staffSearchInput');
+        if (staffSearchInput && staffSearchInput.dataset.listenersBound !== 'true') {
+            staffSearchInput.dataset.listenersBound = 'true';
+            staffSearchInput.addEventListener('input', debouncedStaffSearch);
+        }
+
+        const staffLimitSelect = document.getElementById('staffLimitSelect');
+        if (staffLimitSelect && staffLimitSelect.dataset.listenersBound !== 'true') {
+            staffLimitSelect.dataset.listenersBound = 'true';
+            staffLimitSelect.addEventListener('change', () => {
+                dashboardState.staff.limit = Number.parseInt(staffLimitSelect.value, 10) || 20;
+                dashboardState.staff.page = 1;
+                loadStaffUsers({ reset: true });
+            });
+        }
+
+        const staffClearBtn = document.getElementById('staffSearchClearBtn');
+        if (staffClearBtn && staffClearBtn.dataset.listenersBound !== 'true') {
+            staffClearBtn.dataset.listenersBound = 'true';
+            staffClearBtn.addEventListener('click', () => {
+                const input = document.getElementById('staffSearchInput');
+                if (input) input.value = '';
+                dashboardState.staff.q = '';
+                dashboardState.staff.page = 1;
+                loadStaffUsers({ reset: true });
+            });
+        }
+
+        const courseSearchInput = document.getElementById('courseSearchInput');
+        if (courseSearchInput && courseSearchInput.dataset.listenersBound !== 'true') {
+            courseSearchInput.dataset.listenersBound = 'true';
+            courseSearchInput.addEventListener('input', debouncedCourseSearch);
+        }
+
+        const courseProgramFilterSelect = document.getElementById('courseProgramFilterSelect');
+        if (courseProgramFilterSelect && courseProgramFilterSelect.dataset.listenersBound !== 'true') {
+            courseProgramFilterSelect.dataset.listenersBound = 'true';
+            courseProgramFilterSelect.addEventListener('change', debouncedCourseProgramFilter);
+        }
+
+        const courseLimitSelect = document.getElementById('courseLimitSelect');
+        if (courseLimitSelect && courseLimitSelect.dataset.listenersBound !== 'true') {
+            courseLimitSelect.dataset.listenersBound = 'true';
+            courseLimitSelect.addEventListener('change', () => {
+                dashboardState.courses.limit = Number.parseInt(courseLimitSelect.value, 10) || 25;
+                dashboardState.courses.page = 1;
+                loadCoursesCatalog({ reset: true });
+            });
+        }
+
+        const courseClearBtn = document.getElementById('courseSearchClearBtn');
+        if (courseClearBtn && courseClearBtn.dataset.listenersBound !== 'true') {
+            courseClearBtn.dataset.listenersBound = 'true';
+            courseClearBtn.addEventListener('click', () => {
+                const input = document.getElementById('courseSearchInput');
+                if (input) input.value = '';
+                const programSelect = document.getElementById('courseProgramFilterSelect');
+                if (programSelect) programSelect.value = '';
+                dashboardState.courses.q = '';
+                dashboardState.courses.program = '';
+                dashboardState.assignmentCoursePicker.program = '';
+                dashboardState.enrollmentCoursePicker.program = '';
+                const assignmentProgramSelect = document.getElementById('assignmentCourseProgramFilterSelect');
+                if (assignmentProgramSelect) assignmentProgramSelect.value = '';
+                const enrollmentProgramSelect = document.getElementById('enrollmentCourseProgramFilterSelect');
+                if (enrollmentProgramSelect) enrollmentProgramSelect.value = '';
+                dashboardState.courses.page = 1;
+                loadCoursesCatalog({ reset: true });
+                loadAssignmentCourseOptions({ reset: true });
+                loadEnrollmentCourseOptions({ reset: true });
+            });
+        }
+
+        const assignmentSearchInput = document.getElementById('assignmentSearchInput');
+        if (assignmentSearchInput && assignmentSearchInput.dataset.listenersBound !== 'true') {
+            assignmentSearchInput.dataset.listenersBound = 'true';
+            assignmentSearchInput.addEventListener('input', debouncedAssignmentSearch);
+        }
+
+        const assignmentLimitSelect = document.getElementById('assignmentLimitSelect');
+        if (assignmentLimitSelect && assignmentLimitSelect.dataset.listenersBound !== 'true') {
+            assignmentLimitSelect.dataset.listenersBound = 'true';
+            assignmentLimitSelect.addEventListener('change', () => {
+                dashboardState.assignments.limit = Number.parseInt(assignmentLimitSelect.value, 10) || 25;
+                dashboardState.assignments.page = 1;
+                loadAssignments({ reset: true });
+            });
+        }
+
+        const assignmentClearBtn = document.getElementById('assignmentSearchClearBtn');
+        if (assignmentClearBtn && assignmentClearBtn.dataset.listenersBound !== 'true') {
+            assignmentClearBtn.dataset.listenersBound = 'true';
+            assignmentClearBtn.addEventListener('click', () => {
+                const input = document.getElementById('assignmentSearchInput');
+                if (input) input.value = '';
+                dashboardState.assignments.q = '';
+                dashboardState.assignments.page = 1;
+                loadAssignments({ reset: true });
+            });
+        }
+
+        const assignmentTeacherSearchInput = document.getElementById('assignmentTeacherSearchInput');
+        if (assignmentTeacherSearchInput && assignmentTeacherSearchInput.dataset.listenersBound !== 'true') {
+            assignmentTeacherSearchInput.dataset.listenersBound = 'true';
+            assignmentTeacherSearchInput.addEventListener('input', debouncedTeacherPickerSearch);
+        }
+
+        const assignmentTeacherMoreBtn = document.getElementById('assignmentTeacherMoreBtn');
+        if (assignmentTeacherMoreBtn && assignmentTeacherMoreBtn.dataset.listenersBound !== 'true') {
+            assignmentTeacherMoreBtn.dataset.listenersBound = 'true';
+            assignmentTeacherMoreBtn.addEventListener('click', () => {
+                loadTeachers({ append: true });
+            });
+        }
+
+        const assignmentCourseSearchInput = document.getElementById('assignmentCourseSearchInput');
+        if (assignmentCourseSearchInput && assignmentCourseSearchInput.dataset.listenersBound !== 'true') {
+            assignmentCourseSearchInput.dataset.listenersBound = 'true';
+            assignmentCourseSearchInput.addEventListener('input', debouncedAssignmentCoursePickerSearch);
+        }
+
+        const assignmentCourseProgramFilterSelect = document.getElementById('assignmentCourseProgramFilterSelect');
+        if (assignmentCourseProgramFilterSelect && assignmentCourseProgramFilterSelect.dataset.listenersBound !== 'true') {
+            assignmentCourseProgramFilterSelect.dataset.listenersBound = 'true';
+            assignmentCourseProgramFilterSelect.addEventListener('change', debouncedAssignmentCourseProgramFilter);
+        }
+
+        const assignmentCourseMoreBtn = document.getElementById('assignmentCourseMoreBtn');
+        if (assignmentCourseMoreBtn && assignmentCourseMoreBtn.dataset.listenersBound !== 'true') {
+            assignmentCourseMoreBtn.dataset.listenersBound = 'true';
+            assignmentCourseMoreBtn.addEventListener('click', () => {
+                loadAssignmentCourseOptions({ append: true });
+            });
+        }
+
+        const enrollmentCourseSearchInput = document.getElementById('enrollmentCourseSearchInput');
+        if (enrollmentCourseSearchInput && enrollmentCourseSearchInput.dataset.listenersBound !== 'true') {
+            enrollmentCourseSearchInput.dataset.listenersBound = 'true';
+            enrollmentCourseSearchInput.addEventListener('input', debouncedEnrollmentCoursePickerSearch);
+        }
+
+        const enrollmentCourseProgramFilterSelect = document.getElementById('enrollmentCourseProgramFilterSelect');
+        if (enrollmentCourseProgramFilterSelect && enrollmentCourseProgramFilterSelect.dataset.listenersBound !== 'true') {
+            enrollmentCourseProgramFilterSelect.dataset.listenersBound = 'true';
+            enrollmentCourseProgramFilterSelect.addEventListener('change', debouncedEnrollmentCourseProgramFilter);
+        }
+
+        const enrollmentCourseMoreBtn = document.getElementById('enrollmentCourseMoreBtn');
+        if (enrollmentCourseMoreBtn && enrollmentCourseMoreBtn.dataset.listenersBound !== 'true') {
+            enrollmentCourseMoreBtn.dataset.listenersBound = 'true';
+            enrollmentCourseMoreBtn.addEventListener('click', () => {
+                loadEnrollmentCourseOptions({ append: true });
+            });
+        }
+
+        const enrollmentSearchInput = document.getElementById('enrollmentSearchInput');
+        if (enrollmentSearchInput && enrollmentSearchInput.dataset.listenersBound !== 'true') {
+            enrollmentSearchInput.dataset.listenersBound = 'true';
+            enrollmentSearchInput.addEventListener('input', debouncedEnrollmentSearch);
+        }
+
+        const enrollmentLimitSelect = document.getElementById('enrollmentLimitSelect');
+        if (enrollmentLimitSelect && enrollmentLimitSelect.dataset.listenersBound !== 'true') {
+            enrollmentLimitSelect.dataset.listenersBound = 'true';
+            enrollmentLimitSelect.addEventListener('change', () => {
+                dashboardState.enrollments.limit = Number.parseInt(enrollmentLimitSelect.value, 10) || 50;
+                dashboardState.enrollments.page = 1;
+                loadEnrollments({ reset: true });
+            });
+        }
+
+        const institutionSelect = document.getElementById('institutionSelect');
+        if (institutionSelect && institutionSelect.dataset.listenersBound !== 'true') {
+            institutionSelect.dataset.listenersBound = 'true';
+            institutionSelect.addEventListener('change', async () => {
+                const selectedInstitutionId = institutionSelect.value || '';
+                if (selectedInstitutionId === ALL_INSTITUTIONS_VALUE && isGlobalAdmin) {
+                    applyAllInstitutionsContext();
+                    resetCourseCatalogFilters();
+                    dashboardState.staff.page = 1;
+                    await loadStaffUsers({ reset: true });
+                    await loadProgramFilters();
+                    await loadCoursesCatalog({ reset: true });
+                    setAssignmentMessage('Select one institution to load assignments.', 'info');
+                    setEnrollmentMessage('Select one institution to load enrollments.', 'info');
+                    setInstitutionMessage('Global view enabled: All Institutions. Courses list is global.', 'success');
+                    return;
+                }
+
+                if (!selectedInstitutionId) return;
+                applyInstitutionContext(selectedInstitutionId);
+                resetCourseCatalogFilters();
+                dashboardState.staff.page = 1;
+                dashboardState.assignments.page = 1;
+                dashboardState.enrollments.page = 1;
+                await loadProgramFilters();
+                await loadStaffUsers({ reset: true });
+                await loadCoursesCatalog({ reset: true });
+                await loadTeachers({ reset: true });
+                await loadAssignmentCourseOptions({ reset: true });
+                await loadEnrollmentCourseOptions({ reset: true });
+                await loadAssignments({ reset: true });
+                await loadEnrollments({ reset: true });
+                await loadAcademicKpis();
+                setInstitutionMessage(`Institution changed to ${getActiveInstitutionLabel() || '-'}.`, 'success');
+            });
+        }
+
+        const refreshInstitutionsBtn = document.getElementById('refreshInstitutionsBtn');
+        if (refreshInstitutionsBtn && refreshInstitutionsBtn.dataset.listenersBound !== 'true') {
+            refreshInstitutionsBtn.dataset.listenersBound = 'true';
+            refreshInstitutionsBtn.addEventListener('click', () => {
+                loadInstitutions({ preserveActive: true });
+            });
+        }
+
+        const createInstitutionBtn = document.getElementById('createInstitutionBtn');
+        if (createInstitutionBtn && createInstitutionBtn.dataset.listenersBound !== 'true') {
+            createInstitutionBtn.dataset.listenersBound = 'true';
+            createInstitutionBtn.addEventListener('click', () => openInstitutionEditor('create'));
+        }
+
+        const openInstitutionEditPageBtn = document.getElementById('openInstitutionEditPageBtn');
+        if (openInstitutionEditPageBtn && openInstitutionEditPageBtn.dataset.listenersBound !== 'true') {
+            openInstitutionEditPageBtn.dataset.listenersBound = 'true';
+            openInstitutionEditPageBtn.addEventListener('click', () => openInstitutionEditor('edit'));
+        }
+
+        const saveInstitutionBtn = document.getElementById('saveInstitutionBtn');
+        if (saveInstitutionBtn && saveInstitutionBtn.dataset.listenersBound !== 'true') {
+            saveInstitutionBtn.dataset.listenersBound = 'true';
+            saveInstitutionBtn.addEventListener('click', saveInstitutionProfile);
+        }
+
+        const uploadInstitutionLogoBtn = document.getElementById('uploadInstitutionLogoBtn');
+        if (uploadInstitutionLogoBtn && uploadInstitutionLogoBtn.dataset.listenersBound !== 'true') {
+            uploadInstitutionLogoBtn.dataset.listenersBound = 'true';
+            uploadInstitutionLogoBtn.addEventListener('click', uploadInstitutionLogo);
+        }
+
+        const institutionDetailLogoUrl = document.getElementById('institutionDetailLogoUrl');
+        if (institutionDetailLogoUrl && institutionDetailLogoUrl.dataset.listenersBound !== 'true') {
+            institutionDetailLogoUrl.dataset.listenersBound = 'true';
+            institutionDetailLogoUrl.addEventListener('input', () => {
+                updateInstitutionLogoPreview(institutionDetailLogoUrl.value);
+            });
+        }
+
+        const institutionLogoFile = document.getElementById('institutionLogoFile');
+        if (institutionLogoFile && institutionLogoFile.dataset.listenersBound !== 'true') {
+            institutionLogoFile.dataset.listenersBound = 'true';
+            institutionLogoFile.addEventListener('change', async () => {
+                const file = institutionLogoFile.files?.[0];
+                if (!file) return;
+                try {
+                    const previewDataUrl = await fileToDataUrl(file);
+                    updateInstitutionLogoPreview(previewDataUrl);
+                } catch (error) {
+                    setInstitutionMessage('Could not preview selected logo file.', 'error');
+                }
+            });
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        const pageParams = new URLSearchParams(window.location.search);
+        const requestedInstitutionId = String(pageParams.get('institutionId') || '').trim();
+        if (requestedInstitutionId) {
+            if (requestedInstitutionId === ALL_INSTITUTIONS_VALUE && isGlobalAdmin) {
+                localStorage.setItem(INSTITUTION_SCOPE_KEY, 'all');
+                localStorage.removeItem('activeInstitutionId');
+                localStorage.removeItem('activeInstitutionName');
+            } else {
+                localStorage.setItem('activeInstitutionId', requestedInstitutionId);
+                localStorage.setItem(INSTITUTION_SCOPE_KEY, 'single');
+            }
+        }
+
+        if (!isGlobalAdmin) {
+            dashboardState.institutions.viewAll = false;
+            localStorage.setItem(INSTITUTION_SCOPE_KEY, 'single');
+        } else {
+            dashboardState.institutions.viewAll = localStorage.getItem(INSTITUTION_SCOPE_KEY) === 'all';
+        }
+
+        if (!dashboardState.institutions.viewAll && authUser?.institutionId && !localStorage.getItem('activeInstitutionId')) {
+            localStorage.setItem('activeInstitutionId', authUser.institutionId);
+        }
+
+        dashboardState.institutions.activeId = getActiveInstitutionId();
+        updateStaffBadge();
+
+        setupScalableControls();
+        applyRoleAccessControls();
+        setupModuleTabs();
+        initializeAcademicWorkspace();
+        bindPaginationControls();
+        bindScalableFilters();
+        applyRoleAccessControls();
+
+        const logoutBtn = document.getElementById('logoutBtn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('authUser');
+                localStorage.removeItem('adminToken');
+                localStorage.removeItem('activeInstitutionId');
+                localStorage.removeItem('activeInstitutionName');
+                localStorage.removeItem(INSTITUTION_SCOPE_KEY);
+                window.location.href = 'login.html';
+            });
+        }
+
+        const openStaffCreatePageBtn = document.getElementById('openStaffCreatePageBtn');
+        if (openStaffCreatePageBtn && openStaffCreatePageBtn.dataset.listenersBound !== 'true') {
+            openStaffCreatePageBtn.dataset.listenersBound = 'true';
+            openStaffCreatePageBtn.addEventListener('click', () => openStaffEditor('create'));
+        }
+
+        const refreshStaffBtn = document.getElementById('refreshStaffBtn');
+        if (refreshStaffBtn) {
+            refreshStaffBtn.addEventListener('click', () => {
+                dashboardState.staff.page = 1;
+                loadStaffUsers({ reset: true });
+            });
+        }
+
+        const openCourseCreatePageBtn = document.getElementById('openCourseCreatePageBtn');
+        if (openCourseCreatePageBtn && openCourseCreatePageBtn.dataset.listenersBound !== 'true') {
+            openCourseCreatePageBtn.dataset.listenersBound = 'true';
+            openCourseCreatePageBtn.addEventListener('click', () => openCourseEditor('create'));
+        }
+
+        const openAssignmentManagerPageBtn = document.getElementById('openAssignmentManagerPageBtn');
+        if (openAssignmentManagerPageBtn && openAssignmentManagerPageBtn.dataset.listenersBound !== 'true') {
+            openAssignmentManagerPageBtn.dataset.listenersBound = 'true';
+            openAssignmentManagerPageBtn.addEventListener('click', () => openAssignmentManager());
+        }
+
+        const refreshCoursesBtn = document.getElementById('refreshCoursesBtn');
+        if (refreshCoursesBtn) {
+            refreshCoursesBtn.addEventListener('click', () => {
+                dashboardState.courses.page = 1;
+                loadCoursesCatalog({ reset: true });
+            });
+        }
+
+        const assignTeacherBtn = document.getElementById('assignTeacherBtn');
+        if (assignTeacherBtn) {
+            assignTeacherBtn.addEventListener('click', assignTeacherToCourse);
+        }
+
+        const refreshAssignmentsBtn = document.getElementById('refreshAssignmentsBtn');
+        if (refreshAssignmentsBtn) {
+            refreshAssignmentsBtn.addEventListener('click', () => {
+                dashboardState.assignments.page = 1;
+                loadAssignments({ reset: true });
+            });
+        }
+
+        const enrollmentCourseSelect = document.getElementById('enrollmentCourseSelect');
+        if (enrollmentCourseSelect) {
+            enrollmentCourseSelect.addEventListener('change', () => {
+                dashboardState.enrollments.page = 1;
+                loadEnrollments({ reset: true });
+            });
+        }
+
+        const loadEnrollmentsBtn = document.getElementById('loadEnrollmentsBtn');
+        if (loadEnrollmentsBtn) {
+            loadEnrollmentsBtn.addEventListener('click', () => {
+                dashboardState.enrollments.page = 1;
+                loadEnrollments({ reset: true });
+            });
+        }
+
+        const saveEnrollmentsBtn = document.getElementById('saveEnrollmentsBtn');
+        if (saveEnrollmentsBtn) {
+            saveEnrollmentsBtn.addEventListener('click', () => saveEnrollments(false));
+        }
+
+        const replaceEnrollmentsBtn = document.getElementById('replaceEnrollmentsBtn');
+        if (replaceEnrollmentsBtn) {
+            replaceEnrollmentsBtn.addEventListener('click', () => saveEnrollments(true));
+        }
+
+        setupCharts();
+
+        await loadInstitutions({ preserveActive: true });
+        await loadStaffUsers({ reset: true });
+        await loadProgramFilters();
+        await loadCoursesCatalog({ reset: true });
+        if (!(isGlobalAdmin && dashboardState.institutions.viewAll)) {
+            await loadTeachers({ reset: true });
+            await loadAssignmentCourseOptions({ reset: true });
+            await loadEnrollmentCourseOptions({ reset: true });
+            await loadAssignments({ reset: true });
+            await loadEnrollments({ reset: true });
+        } else {
+            setAssignmentMessage('Select one institution to load assignments.', 'info');
+            setEnrollmentMessage('Select one institution to load enrollments.', 'info');
+        }
+        updateStaffBadge();
+
+        document.getElementById('searchPercentageBtn').addEventListener('click',
             debounce(searchByPercentageRange, 300));
-        document.getElementById('searchStudentBtn').addEventListener('click', 
+        document.getElementById('searchStudentBtn').addEventListener('click',
             debounce(searchStudent, 300));
-        document.getElementById('searchDateBtn').addEventListener('click', 
+        document.getElementById('searchDateBtn').addEventListener('click',
             debounce(viewDateAttendance, 300));
         document.getElementById('attendanceDate').valueAsDate = new Date();
-        document.getElementById('downloadPercentageCsvBtn').addEventListener('click', 
+        document.getElementById('downloadPercentageCsvBtn').addEventListener('click',
             downloadPercentageResultsAsCsv);
     });
+
 
     async function searchByPercentageRange() {
         const minPercentageInput = document.getElementById('minPercentage');

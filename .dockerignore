@@ -1,0 +1,8 @@
+.git
+.gitignore
+node_modules
+backend/node_modules
+frontend/node_modules
+*.log
+log
+backend/apache-maven-3.9.9-bin.zip

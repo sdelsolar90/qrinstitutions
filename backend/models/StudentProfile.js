@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const studentProfileSchema = new mongoose.Schema({
-    universityRollNo: { type: String, required: true, unique: true },
+    institutionId: { type: mongoose.Schema.Types.ObjectId, ref: "Institution", required: true, index: true },
+    universityRollNo: { type: String, required: true },
     personalInfo: {
       fullName: String,
       profilePicture: String,
@@ -42,4 +43,10 @@ const studentProfileSchema = new mongoose.Schema({
       resumeUrl: String
     }
   },{ collection: 'studentprofiles' });
+
+studentProfileSchema.index(
+  { institutionId: 1, universityRollNo: 1 },
+  { unique: true, name: "institution_student_rollno_profile_idx" }
+);
+
   module.exports = mongoose.model('StudentProfile', studentProfileSchema);

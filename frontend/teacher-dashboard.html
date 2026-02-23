@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher Attendance Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-4">
+  <div class="max-w-5xl mx-auto">
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <div class="flex flex-wrap justify-between items-center gap-2 mb-6">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-800">My Attendance Data</h1>
+          <p id="staffMeta" class="text-sm text-gray-500"></p>
+        </div>
+        <div class="flex gap-2">
+          <a href="qr-scanner.html" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">Generate QR</a>
+          <button id="logoutBtn" class="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors">Logout</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        <div>
+          <label for="courseSelect" class="block text-sm font-medium text-gray-700 mb-1">Course</label>
+          <select id="courseSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"></select>
+        </div>
+        <div>
+          <label for="dateInput" class="block text-sm font-medium text-gray-700 mb-1">Date</label>
+          <input id="dateInput" type="date" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div class="flex items-end">
+          <button id="loadBtn" class="w-full bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 transition-colors">Load Attendance</button>
+        </div>
+      </div>
+
+      <p id="statusMessage" class="text-sm text-gray-600 mb-2"></p>
+      <p id="errorMessage" class="text-sm text-red-600 mb-4"></p>
+
+      <div class="flex justify-between items-center mb-2">
+        <h2 class="text-lg font-semibold">Present Students</h2>
+        <span id="summaryBadge" class="text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded-full">0 students</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="min-w-full border border-gray-300 text-sm">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="px-3 py-2 border text-left">Roll No</th>
+              <th class="px-3 py-2 border text-left">Name</th>
+              <th class="px-3 py-2 border text-left">Section</th>
+              <th class="px-3 py-2 border text-left">Time</th>
+              <th class="px-3 py-2 border text-left">Distance</th>
+            </tr>
+          </thead>
+          <tbody id="attendanceTable" class="bg-white"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE =
+      (window.location.origin && window.location.origin !== 'null')
+        ? window.location.origin
+        : 'http://127.0.0.1:5001';
+
+    const authToken = localStorage.getItem('authToken');
+    const authUserRaw = localStorage.getItem('authUser');
+    const authUser = authUserRaw ? JSON.parse(authUserRaw) : null;
+    const allowedRoles = ['teacher'];
+
+    if (!authToken || !authUser || !allowedRoles.includes(authUser.role)) {
+      window.location.href = 'login.html';
+    }
+
+    axios.defaults.headers.common.Authorization = `Bearer ${authToken}`;
+    axios.interceptors.request.use((config) => {
+      const scopedInstitutionId = localStorage.getItem('activeInstitutionId') || authUser?.institutionId || '';
+      if (scopedInstitutionId) {
+        config.headers['X-Institution-Id'] = scopedInstitutionId;
+      }
+      return config;
+    });
+    axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        const status = error?.response?.status;
+        if (status === 401 || status === 403) {
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('authUser');
+          localStorage.removeItem('adminToken');
+          localStorage.removeItem('lastSelectedCourseId');
+          localStorage.removeItem('activeInstitutionId');
+          localStorage.removeItem('activeInstitutionName');
+          window.location.href = 'login.html';
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    let courses = [];
+
+    function setStatus(message) {
+      const statusMessage = document.getElementById('statusMessage');
+      if (statusMessage) statusMessage.textContent = message || '';
+    }
+
+    function setError(message) {
+      const errorMessage = document.getElementById('errorMessage');
+      if (errorMessage) errorMessage.textContent = message || '';
+    }
+
+    function setSummary(count) {
+      const summaryBadge = document.getElementById('summaryBadge');
+      if (summaryBadge) summaryBadge.textContent = `${count} students`;
+    }
+
+    function formatDistance(value) {
+      if (typeof value !== 'number' || Number.isNaN(value)) return '-';
+      return `${Math.round(value)}m`;
+    }
+
+    function renderTable(rows) {
+      const tableBody = document.getElementById('attendanceTable');
+      if (!tableBody) return;
+
+      if (!rows.length) {
+        tableBody.innerHTML = '<tr><td colspan="5" class="px-3 py-3 border text-center text-gray-500">No attendance records found for this course/date.</td></tr>';
+        setSummary(0);
+        return;
+      }
+
+      tableBody.innerHTML = rows.map((row) => `
+        <tr>
+          <td class="px-3 py-2 border">${row.universityRollNo || '-'}</td>
+          <td class="px-3 py-2 border">${row.name || '-'}</td>
+          <td class="px-3 py-2 border">${row.section || '-'}</td>
+          <td class="px-3 py-2 border">${row.time || '-'}</td>
+          <td class="px-3 py-2 border">${formatDistance(row.distanceFromClass)}</td>
+        </tr>
+      `).join('');
+      setSummary(rows.length);
+    }
+
+    function renderCourseSelect() {
+      const courseSelect = document.getElementById('courseSelect');
+      if (!courseSelect) return;
+
+      if (!courses.length) {
+        courseSelect.innerHTML = '<option value="">No courses assigned</option>';
+        courseSelect.disabled = true;
+        document.getElementById('loadBtn').disabled = true;
+        return;
+      }
+
+      courseSelect.disabled = false;
+      document.getElementById('loadBtn').disabled = false;
+      const lastCourseId = localStorage.getItem('lastSelectedCourseId') || '';
+
+      courseSelect.innerHTML = courses
+        .map((course) => `<option value="${course.id}">${course.code} - ${course.name} (Section ${course.section})</option>`)
+        .join('');
+
+      if (courses.some((course) => course.id === lastCourseId)) {
+        courseSelect.value = lastCourseId;
+      }
+    }
+
+    async function loadCourses() {
+      try {
+        let page = 1;
+        let hasNext = true;
+        const merged = [];
+
+        while (hasNext && page <= 30) {
+          const response = await axios.get(`${API_BASE}/api/academic/my-courses`, {
+            params: { page, limit: 100 }
+          });
+          const rows = response?.data?.data || [];
+          const pagination = response?.data?.pagination || {};
+          merged.push(...rows);
+          hasNext = Boolean(pagination.hasNext);
+          page += 1;
+          if (!rows.length) break;
+        }
+
+        const seen = new Set();
+        courses = merged.filter((course) => {
+          if (!course?.id || seen.has(course.id)) return false;
+          seen.add(course.id);
+          return true;
+        });
+        renderCourseSelect();
+        setStatus('Courses loaded.');
+      } catch (error) {
+        setError(error.response?.data?.message || 'Failed to load courses.');
+        courses = [];
+        renderCourseSelect();
+      }
+    }
+
+    async function loadAttendance() {
+      setError('');
+      const courseId = document.getElementById('courseSelect')?.value;
+      const date = document.getElementById('dateInput')?.value;
+
+      if (!courseId) {
+        setError('Please select a course.');
+        return;
+      }
+      if (!date) {
+        setError('Please select a date.');
+        return;
+      }
+
+      localStorage.setItem('lastSelectedCourseId', courseId);
+
+      try {
+        const response = await axios.get(`${API_BASE}/api/attendance/by-date`, {
+          params: { date, courseId }
+        });
+        const rows = response?.data?.data || [];
+        renderTable(rows);
+        setStatus(`Loaded ${rows.length} records.`);
+      } catch (error) {
+        renderTable([]);
+        setError(error.response?.data?.message || 'Failed to load attendance data.');
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const staffMeta = document.getElementById('staffMeta');
+      if (staffMeta && authUser) {
+        const institutionName = localStorage.getItem('activeInstitutionName') || authUser?.institution?.name || '';
+        staffMeta.textContent = institutionName
+          ? `${authUser.name} (${authUser.role}) • ${institutionName}`
+          : `${authUser.name} (${authUser.role})`;
+      }
+
+      const today = new Date().toISOString().split('T')[0];
+      const dateInput = document.getElementById('dateInput');
+      if (dateInput) dateInput.value = today;
+
+      document.getElementById('logoutBtn')?.addEventListener('click', () => {
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('authUser');
+        localStorage.removeItem('adminToken');
+        localStorage.removeItem('lastSelectedCourseId');
+        localStorage.removeItem('activeInstitutionId');
+        localStorage.removeItem('activeInstitutionName');
+        window.location.href = 'login.html';
+      });
+
+      document.getElementById('loadBtn')?.addEventListener('click', loadAttendance);
+      document.getElementById('courseSelect')?.addEventListener('change', () => {
+        const selected = document.getElementById('courseSelect').value;
+        if (selected) localStorage.setItem('lastSelectedCourseId', selected);
+      });
+
+      await loadCourses();
+      if (courses.length) {
+        await loadAttendance();
+      }
+    });
+  </script>
+</body>
+</html>

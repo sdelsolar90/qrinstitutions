@@ -5,8 +5,9 @@ const crypto = require('crypto');
 
 // Configuration
 const QR_CODE_VALIDITY = 1.5 * 60 * 1000; // 1.5 minutes in ms
-const QR_CODE_DIR = process.env.QR_CODE_DIR || path.join(__dirname, 'public', 'qrcodes');
+const QR_CODE_DIR = process.env.QR_CODE_DIR || path.join(__dirname, '../frontend/public/qrcodes');
 const CACHE_TIME = 90000; // 90 seconds (1.5 minutes), corrected comment
+const APP_BASE_URL = (process.env.APP_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 // Track active sessions and IP cache
 const activeSessions = new Map();
@@ -17,10 +18,22 @@ if (!fs.existsSync(QR_CODE_DIR)) {
     fs.mkdirSync(QR_CODE_DIR, { recursive: true });
 }
 
-async function generateQRCode(ipAddress) {
+function makeCacheKey(ipAddress, sessionContext = {}) {
+    return [
+        ipAddress || '',
+        sessionContext.institutionId || '',
+        sessionContext.generatedBy || '',
+        sessionContext.courseId || '',
+        sessionContext.section || ''
+    ].join('|');
+}
+
+async function generateQRCode(ipAddress, sessionContext = {}) {
+    const cacheKey = makeCacheKey(ipAddress, sessionContext);
+
     // Check cache first
-    if (ipCache.has(ipAddress)) {
-        const cached = ipCache.get(ipAddress);
+    if (ipCache.has(cacheKey)) {
+        const cached = ipCache.get(cacheKey);
         if (Date.now() - cached.timestamp < CACHE_TIME) {
             return cached.data;
         }
@@ -35,7 +48,7 @@ async function generateQRCode(ipAddress) {
                          .update(sessionId + timestamp + secretKey)
                          .digest('hex');
 
-        const qrData = `http://localhost:5000/verify-attendance?data=${encodeURIComponent(JSON.stringify({
+        const qrData = `${APP_BASE_URL}/verify-attendance?data=${encodeURIComponent(JSON.stringify({
             sessionId,
             timestamp,
             hash
@@ -52,10 +65,20 @@ async function generateQRCode(ipAddress) {
             margin: 2
         });
 
-        activeSessions.set(sessionId, {
+        const sessionRecord = {
             ip: ipAddress,
-            expiresAt: timestamp + QR_CODE_VALIDITY
-        });
+            expiresAt: timestamp + QR_CODE_VALIDITY,
+            createdAt: timestamp,
+            generatedBy: sessionContext.generatedBy || null,
+            generatedByRole: sessionContext.generatedByRole || null,
+            generatedByName: sessionContext.generatedByName || null,
+            institutionId: sessionContext.institutionId || null,
+            courseId: sessionContext.courseId || null,
+            courseCode: sessionContext.courseCode || null,
+            courseName: sessionContext.courseName || null,
+            section: sessionContext.section || null
+        };
+        activeSessions.set(sessionId, sessionRecord);
 
         setTimeout(() => {
             activeSessions.delete(sessionId);
@@ -64,10 +87,17 @@ async function generateQRCode(ipAddress) {
         const result = {
             qrImage: `/qrcodes/${fileName}`,
             sessionId,
-            expiresIn: QR_CODE_VALIDITY // <<< MODIFIED: Added expiresIn
+            expiresIn: QR_CODE_VALIDITY,
+            sessionContext: {
+                institutionId: sessionRecord.institutionId,
+                courseId: sessionRecord.courseId,
+                courseCode: sessionRecord.courseCode,
+                courseName: sessionRecord.courseName,
+                section: sessionRecord.section
+            }
         };
 
-        ipCache.set(ipAddress, {
+        ipCache.set(cacheKey, {
             data: result,
             timestamp: Date.now()
         });
@@ -80,15 +110,23 @@ async function generateQRCode(ipAddress) {
 }
 
 function validateSession(sessionId) {
+    const session = getSessionDetails(sessionId);
+    return Boolean(session);
+}
+
+function getSessionDetails(sessionId) {
     const session = activeSessions.get(sessionId);
-    if (!session) return false;
+    if (!session) return null;
     
     if (Date.now() > session.expiresAt) {
         activeSessions.delete(sessionId);
-        return false;
+        return null;
     }
     
-    return true;
+    return {
+        sessionId,
+        ...session
+    };
 }
 
 function cleanupOldQRCodes() {
@@ -119,5 +157,6 @@ cleanupOldQRCodes();
 
 module.exports = {
     generateQRCode,
-    validateSession
+    validateSession,
+    getSessionDetails
 };

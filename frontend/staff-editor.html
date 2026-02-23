@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff User Editor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-4">
+  <div class="max-w-2xl mx-auto">
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <div class="flex justify-between items-center mb-5">
+        <div>
+          <h1 id="pageTitle" class="text-2xl font-bold text-gray-800">New Staff User</h1>
+          <p id="pageSubtitle" class="text-sm text-gray-500 mt-1">Create teacher or institution users in a separate flow</p>
+        </div>
+        <button id="backBtn" class="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors">
+          Back
+        </button>
+      </div>
+
+      <div id="message" class="text-sm mb-3"></div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <input type="text" id="staffName" placeholder="Full name"
+          class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+        <input type="email" id="staffEmail" placeholder="Email"
+          class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+        <input type="password" id="staffPassword" placeholder="Password (min 8 chars)"
+          class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+        <select id="staffRole" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"></select>
+        <select id="staffIsActive" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <option value="true">Active</option>
+          <option value="false">Inactive</option>
+        </select>
+        <div class="md:col-span-2">
+          <label for="staffInstitutionSelect" class="block text-sm font-medium text-gray-700 mb-1">Institution</label>
+          <select id="staffInstitutionSelect" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"></select>
+          <p id="institutionHelp" class="text-xs text-gray-500 mt-1"></p>
+        </div>
+      </div>
+
+      <p id="passwordHelp" class="text-xs text-gray-500 mt-2">Password is required for new users.</p>
+
+      <div class="mt-5 flex items-center gap-2">
+        <button id="saveBtn" class="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+          Create and Return
+        </button>
+        <a id="openViewBtn" href="#" class="hidden bg-white text-blue-700 border border-blue-300 px-5 py-2 rounded-lg hover:bg-blue-50 transition-colors">
+          Open Profile View
+        </a>
+        <button id="cancelBtn" class="bg-white text-gray-800 border border-gray-300 px-5 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = (window.location.origin && window.location.origin !== "null")
+      ? window.location.origin
+      : "http://127.0.0.1:5001";
+
+    const authToken = localStorage.getItem("authToken");
+    const authUserRaw = localStorage.getItem("authUser");
+    const authUser = authUserRaw ? JSON.parse(authUserRaw) : null;
+    const allowedRoles = ["superadmin", "admin", "institution_admin"];
+
+    if (!authToken || !authUser || !allowedRoles.includes(authUser.role)) {
+      window.location.href = "admin-dashboard.html";
+    }
+
+    const isSuperadmin = authUser?.role === "superadmin";
+    const isGlobalAdmin = isSuperadmin || authUser?.role === "admin";
+    const isInstitutionAdmin = authUser?.role === "institution_admin";
+    const ALL_INSTITUTIONS_VALUE = "__all__";
+
+    const pageParams = new URLSearchParams(window.location.search);
+    const mode = pageParams.get("mode") === "edit" ? "edit" : "create";
+    const userId = String(pageParams.get("userId") || "").trim();
+    const requestedInstitutionId = String(pageParams.get("institutionId") || "").trim();
+    const requestedReturnInstitutionId = String(pageParams.get("returnInstitutionId") || "").trim();
+    const requestedReturnTo = String(pageParams.get("returnTo") || "").trim();
+
+    const normalizedRequestedInstitutionId =
+      requestedInstitutionId && requestedInstitutionId !== ALL_INSTITUTIONS_VALUE
+        ? requestedInstitutionId
+        : "";
+    let returnInstitutionId =
+      requestedReturnInstitutionId ||
+      (String(localStorage.getItem("activeInstitutionScope") || "").trim() === "all" && isGlobalAdmin
+        ? ALL_INSTITUTIONS_VALUE
+        : normalizedRequestedInstitutionId);
+    const returnToPath = requestedReturnTo;
+
+    let selectedInstitutionId = normalizedRequestedInstitutionId || localStorage.getItem("activeInstitutionId") || authUser?.institutionId || "";
+    let institutionRows = [];
+    let currentUser = null;
+
+    axios.defaults.headers.common.Authorization = "Bearer " + authToken;
+    axios.interceptors.request.use((config) => {
+      const storedInstitutionId = localStorage.getItem("activeInstitutionId") || "";
+      const scopedInstitutionId = isGlobalAdmin
+        ? (selectedInstitutionId || storedInstitutionId)
+        : (selectedInstitutionId || storedInstitutionId || authUser?.institutionId || "");
+
+      if (scopedInstitutionId) {
+        config.headers["X-Institution-Id"] = scopedInstitutionId;
+      } else if (config.headers && Object.prototype.hasOwnProperty.call(config.headers, "X-Institution-Id")) {
+        delete config.headers["X-Institution-Id"];
+      }
+      return config;
+    });
+
+    axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        const status = error?.response?.status;
+        if (status === 401 || status === 403) {
+          localStorage.removeItem("authToken");
+          localStorage.removeItem("authUser");
+          localStorage.removeItem("adminToken");
+          localStorage.removeItem("activeInstitutionId");
+          localStorage.removeItem("activeInstitutionName");
+          localStorage.removeItem("activeInstitutionScope");
+          window.location.href = "login.html";
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    function setMessage(message, type = "info") {
+      const el = document.getElementById("message");
+      if (!el) return;
+      el.textContent = message || "";
+      el.className = "text-sm mb-3";
+      if (type === "error") el.classList.add("text-red-600");
+      if (type === "success") el.classList.add("text-green-600");
+      if (type === "info") el.classList.add("text-gray-600");
+    }
+
+    function formatRoleLabel(role) {
+      const value = String(role || "").trim().toLowerCase();
+      if (value === "superadmin") return "Superadmin";
+      if (value === "admin") return "Admin (Platform)";
+      if (value === "institution_admin") return "Institution Admin";
+      if (value === "institution_user") return "Institution User (Read Only)";
+      if (value === "teacher") return "Teacher";
+      return role || "-";
+    }
+
+    function buildRoleOptions() {
+      if (isSuperadmin) {
+        return [
+          { value: "admin", label: "Admin (Platform)" },
+          { value: "institution_admin", label: "Institution Admin" },
+          { value: "institution_user", label: "Institution User (Read Only)" },
+          { value: "teacher", label: "Teacher" }
+        ];
+      }
+      if (authUser?.role === "admin") {
+        return [
+          { value: "institution_admin", label: "Institution Admin" },
+          { value: "institution_user", label: "Institution User (Read Only)" },
+          { value: "teacher", label: "Teacher" }
+        ];
+      }
+      if (isInstitutionAdmin) {
+        return [
+          { value: "institution_user", label: "Institution User (Read Only)" },
+          { value: "teacher", label: "Teacher" }
+        ];
+      }
+      return [];
+    }
+
+    function renderRoleOptions(currentRole = "") {
+      const roleSelect = document.getElementById("staffRole");
+      if (!roleSelect) return;
+      const options = buildRoleOptions();
+
+      if (!options.length) {
+        roleSelect.innerHTML = '<option value="">Read only</option>';
+        roleSelect.disabled = true;
+        return;
+      }
+
+      const allOptions = [...options];
+      if (currentRole && !options.some((item) => item.value === currentRole)) {
+        allOptions.unshift({ value: currentRole, label: formatRoleLabel(currentRole) + " (Current)" });
+      }
+
+      roleSelect.disabled = false;
+      roleSelect.innerHTML = allOptions
+        .map((item) => '<option value="' + item.value + '">' + item.label + '</option>')
+        .join("");
+
+      roleSelect.value = currentRole && allOptions.some((item) => item.value === currentRole)
+        ? currentRole
+        : allOptions[0].value;
+    }
+
+    function canNavigateBackInApp() {
+      return window.history.length > 1;
+    }
+
+    function goToReturnToPath() {
+      if (!returnToPath) return false;
+      try {
+        const targetUrl = new URL(returnToPath, window.location.origin);
+        if (targetUrl.origin !== window.location.origin) return false;
+        window.location.href = targetUrl.pathname + targetUrl.search + targetUrl.hash;
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function goBack(targetInstitutionId = selectedInstitutionId, { preferHistory = true } = {}) {
+      if (preferHistory && canNavigateBackInApp()) {
+        window.history.back();
+        return;
+      }
+      if (goToReturnToPath()) {
+        return;
+      }
+      const resolvedBackInstitutionId = returnInstitutionId || targetInstitutionId;
+      const suffix = resolvedBackInstitutionId ? "?institutionId=" + encodeURIComponent(resolvedBackInstitutionId) : "";
+      window.location.href = "admin-dashboard.html" + suffix;
+    }
+
+    function buildStaffViewUrl(userIdValue, institutionIdValue = "", returnInstitutionIdValue = "", returnToValue = "") {
+      const params = new URLSearchParams();
+      if (userIdValue) params.set("userId", String(userIdValue));
+      if (institutionIdValue) params.set("institutionId", String(institutionIdValue));
+      if (returnInstitutionIdValue) params.set("returnInstitutionId", String(returnInstitutionIdValue));
+      if (returnToValue) params.set("returnTo", String(returnToValue));
+      const query = params.toString();
+      return "staff-view.html" + (query ? "?" + query : "");
+    }
+
+    function syncEditViewLink() {
+      const openViewBtn = document.getElementById("openViewBtn");
+      if (!openViewBtn) return;
+
+      if (mode !== "edit" || !userId) {
+        openViewBtn.classList.add("hidden");
+        return;
+      }
+
+      openViewBtn.classList.remove("hidden");
+      const currentReturnTo = window.location.pathname + window.location.search;
+      openViewBtn.href = buildStaffViewUrl(userId, selectedInstitutionId, returnInstitutionId || selectedInstitutionId, currentReturnTo);
+    }
+
+    function applyInstitutionSelection(institutionId) {
+      selectedInstitutionId = String(institutionId || "").trim();
+      if (!selectedInstitutionId) return;
+      localStorage.setItem("activeInstitutionId", selectedInstitutionId);
+      const active = institutionRows.find((institution) => institution.id === selectedInstitutionId);
+      if (active?.name) {
+        localStorage.setItem("activeInstitutionName", active.name);
+      }
+      syncEditViewLink();
+    }
+
+    function renderInstitutionOptions() {
+      const select = document.getElementById("staffInstitutionSelect");
+      const help = document.getElementById("institutionHelp");
+      if (!select || !help) return;
+
+      if (!institutionRows.length) {
+        select.innerHTML = '<option value="">No institutions found</option>';
+        select.disabled = true;
+        help.textContent = "Create an institution first.";
+        return;
+      }
+
+      select.innerHTML = institutionRows
+        .map((institution) => '<option value="' + institution.id + '">' + institution.name + ' (' + (institution.code || '-') + ')</option>')
+        .join("");
+
+      if (!institutionRows.some((institution) => institution.id === selectedInstitutionId)) {
+        selectedInstitutionId = institutionRows[0].id;
+      }
+
+      select.value = selectedInstitutionId;
+      applyInstitutionSelection(selectedInstitutionId);
+
+      if (isInstitutionAdmin) {
+        select.disabled = true;
+        help.textContent = "Institution Admin is scoped to the assigned institution.";
+      } else {
+        select.disabled = false;
+        help.textContent = "Select the institution where this user will operate.";
+      }
+    }
+
+    async function loadInstitutions() {
+      try {
+        const response = await axios.get(API_BASE + "/api/auth/institutions");
+        institutionRows = response?.data?.data || [];
+        renderInstitutionOptions();
+      } catch (error) {
+        setMessage(error.response?.data?.message || "Failed to load institutions.", "error");
+      }
+    }
+
+    function fillUserForm(user) {
+      if (!user) return;
+      currentUser = user;
+
+      const nameInput = document.getElementById("staffName");
+      const emailInput = document.getElementById("staffEmail");
+      const statusSelect = document.getElementById("staffIsActive");
+
+      if (nameInput) nameInput.value = user.name || "";
+      if (emailInput) emailInput.value = user.email || "";
+      if (statusSelect) statusSelect.value = user.isActive === false ? "false" : "true";
+
+      selectedInstitutionId = String(user.institutionId || selectedInstitutionId || "");
+      if (!returnInstitutionId) {
+        returnInstitutionId = selectedInstitutionId;
+      }
+      renderRoleOptions(String(user.role || ""));
+      renderInstitutionOptions();
+
+      const roleSelect = document.getElementById("staffRole");
+      const isSelf = String(user.id || "") === String(authUser?.id || "");
+      if (roleSelect && isInstitutionAdmin && isSelf) {
+        roleSelect.disabled = true;
+      }
+    }
+
+    async function loadUserForEdit() {
+      if (mode !== "edit") return;
+      if (!userId) {
+        setMessage("Missing userId for edit mode.", "error");
+        const saveBtn = document.getElementById("saveBtn");
+        if (saveBtn) saveBtn.disabled = true;
+        return;
+      }
+
+      try {
+        const response = await axios.get(API_BASE + "/api/auth/users/" + encodeURIComponent(userId), {
+          params: { includeAll: isGlobalAdmin ? "true" : undefined }
+        });
+        fillUserForm(response?.data?.user || null);
+        syncEditViewLink();
+      } catch (error) {
+        setMessage(error.response?.data?.message || "Failed to load user.", "error");
+        const saveBtn = document.getElementById("saveBtn");
+        if (saveBtn) saveBtn.disabled = true;
+      }
+    }
+
+    function readPayload() {
+      const payload = {
+        name: String(document.getElementById("staffName")?.value || "").trim(),
+        email: String(document.getElementById("staffEmail")?.value || "").trim(),
+        role: String(document.getElementById("staffRole")?.value || "").trim(),
+        institutionId: selectedInstitutionId,
+        isActive: String(document.getElementById("staffIsActive")?.value || "true") === "true"
+      };
+
+      const password = String(document.getElementById("staffPassword")?.value || "");
+      if (mode === "create" || password.trim()) {
+        payload.password = password;
+      }
+
+      return payload;
+    }
+
+    function validatePayload(payload) {
+      if (!payload.name) return "Name is required.";
+      if (!payload.email) return "Email is required.";
+      if (!payload.role) return "Role is required.";
+      if (!payload.institutionId) return "Select an institution first.";
+      if (mode === "create" && (!payload.password || payload.password.length < 8)) {
+        return "Password must be at least 8 characters.";
+      }
+      if (mode === "edit" && payload.password && payload.password.length < 8) {
+        return "If you update password, it must be at least 8 characters.";
+      }
+      return "";
+    }
+
+    async function saveStaffUser() {
+      const payload = readPayload();
+      const validationError = validatePayload(payload);
+      if (validationError) {
+        setMessage(validationError, "error");
+        return;
+      }
+
+      if (mode === "edit" && !payload.password) {
+        delete payload.password;
+      }
+
+      const saveBtn = document.getElementById("saveBtn");
+      if (saveBtn) saveBtn.disabled = true;
+
+      try {
+        let response;
+        if (mode === "edit") {
+          response = await axios.patch(API_BASE + "/api/auth/users/" + encodeURIComponent(userId), payload, {
+            params: { includeAll: isGlobalAdmin ? "true" : undefined }
+          });
+        } else {
+          response = await axios.post(API_BASE + "/api/auth/users", payload);
+        }
+
+        const returnedUser = response?.data?.user || currentUser;
+        setMessage(mode === "edit" ? "User updated successfully." : "Staff user created successfully.", "success");
+        const nextInstitutionId = returnedUser?.institutionId || selectedInstitutionId || "";
+        setTimeout(() => goBack(nextInstitutionId, { preferHistory: false }), 500);
+      } catch (error) {
+        setMessage(error.response?.data?.message || (mode === "edit" ? "Failed to update user." : "Failed to create staff user."), "error");
+      } finally {
+        if (saveBtn) saveBtn.disabled = false;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      const pageTitle = document.getElementById("pageTitle");
+      const subtitle = document.getElementById("pageSubtitle");
+      const saveBtn = document.getElementById("saveBtn");
+      const passwordHelp = document.getElementById("passwordHelp");
+
+      if (mode === "edit") {
+        if (pageTitle) pageTitle.textContent = "Edit User";
+        if (subtitle) subtitle.textContent = "Update user details, role, status or institution";
+        if (saveBtn) saveBtn.textContent = "Save and Return";
+        if (passwordHelp) passwordHelp.textContent = "Leave password empty to keep current password.";
+      } else {
+        if (pageTitle) pageTitle.textContent = "New Staff User";
+        if (subtitle) subtitle.textContent = isGlobalAdmin
+          ? "Create staff users and assign role/institution"
+          : "Create teacher or institution users in your institution";
+      }
+
+      renderRoleOptions();
+      await loadInstitutions();
+      await loadUserForEdit();
+
+      const roleOptions = buildRoleOptions();
+      if (!roleOptions.length) {
+        setMessage("Read-only role: you cannot manage staff users.", "error");
+        if (saveBtn) saveBtn.disabled = true;
+      }
+
+      const institutionSelect = document.getElementById("staffInstitutionSelect");
+      if (institutionSelect) {
+        institutionSelect.addEventListener("change", () => {
+          applyInstitutionSelection(institutionSelect.value);
+        });
+      }
+
+      if (saveBtn) {
+        saveBtn.addEventListener("click", saveStaffUser);
+      }
+
+      const backBtn = document.getElementById("backBtn");
+      if (backBtn) {
+        backBtn.addEventListener("click", () => goBack(selectedInstitutionId, { preferHistory: true }));
+      }
+
+      const cancelBtn = document.getElementById("cancelBtn");
+      if (cancelBtn) {
+        cancelBtn.addEventListener("click", () => goBack(selectedInstitutionId, { preferHistory: true }));
+      }
+      syncEditViewLink();
+    });
+  </script>
+</body>
+</html>

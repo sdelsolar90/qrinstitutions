@@ -628,8 +628,9 @@
 
 <script type="module">
   // API Configuration
-  const API_BASE = 'http://localhost:5000'; // Your backend URL
+  const API_BASE = window.location.origin;
   let currentRollNo = null;
+  let currentInstitutionId = "";
   let attendanceChart = null;
   const notificationBadge = document.getElementById('notificationBadge');
   const findPathBtn = document.getElementById('findPathBtn');
@@ -637,6 +638,12 @@
   const navEndLocation = document.getElementById('navEndLocation');
   const shortestPathResult = document.getElementById('shortestPathResult');
   const pathLoadingSpinner = document.getElementById('pathLoadingSpinner');
+
+  function withInstitution(url) {
+    if (!currentInstitutionId) return url;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}institutionId=${encodeURIComponent(currentInstitutionId)}`;
+  }
 
   // You might want to populate these dropdowns dynamically if locations can change
   // For now, assuming they are hardcoded or match the server's mock data
@@ -697,7 +704,9 @@
 
   async function loadDocuments() {
   try {
-    const response = await fetch(`${API_BASE}/api/students/${encodeURIComponent(currentRollNo)}/documents`);
+    const response = await fetch(
+      withInstitution(`${API_BASE}/api/students/${encodeURIComponent(currentRollNo)}/documents`)
+    );
     
     if (!response.ok) {
       throw new Error('Failed to load documents');
@@ -717,6 +726,7 @@
     // Get rollNo from URL or use a default for demo
     const urlParams = new URLSearchParams(window.location.search);
     currentRollNo = urlParams.get('rollNo');
+    currentInstitutionId = urlParams.get('institutionId') || '';
     
     if (!currentRollNo) {
       showError("Missing roll number in URL");
@@ -734,7 +744,9 @@
     //initCommunityExplorer();
     // Load student data
     try {
-      const response = await fetch(`${API_BASE}/api/students/profile?rollNo=${encodeURIComponent(currentRollNo)}`);
+      const response = await fetch(
+        withInstitution(`${API_BASE}/api/students/profile?rollNo=${encodeURIComponent(currentRollNo)}`)
+      );
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -821,13 +833,14 @@
       };
 
       try {
-        const response = await fetch(`${API_BASE}/api/students/profile`, {
+        const response = await fetch(withInstitution(`${API_BASE}/api/students/profile`), {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             rollNo: currentRollNo,
+            institutionId: currentInstitutionId || undefined,
             ...updatedInfo
           })
         });
@@ -893,9 +906,12 @@
       formData.append('document', file);
       formData.append('type', documentType);
       formData.append('rollNo', currentRollNo);
+      if (currentInstitutionId) {
+        formData.append('institutionId', currentInstitutionId);
+      }
 
       try {
-        const response = await fetch(`${API_BASE}/api/students/documents`, {
+        const response = await fetch(withInstitution(`${API_BASE}/api/students/documents`), {
           method: 'POST',
           body: formData
         });
@@ -933,7 +949,9 @@
     // Fetch notifications from API
     async function fetchNotifications() {
       try {
-        const response = await fetch(`${API_BASE}/api/students/notifications?rollNo=${encodeURIComponent(currentRollNo)}`);
+        const response = await fetch(
+          withInstitution(`${API_BASE}/api/students/notifications?rollNo=${encodeURIComponent(currentRollNo)}`)
+        );
         
         if (!response.ok) {
           throw new Error('Failed to load notifications');
@@ -995,7 +1013,8 @@ document.getElementById('markAllAsRead').addEventListener('click', async () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        rollNo: currentRollNo
+        rollNo: currentRollNo,
+        institutionId: currentInstitutionId || undefined
       })
     });
 
@@ -1068,7 +1087,9 @@ document.getElementById('markAttendanceBtn')?.addEventListener('click', async ()
 
   async function loadAttendanceData(period) {
     try {
-        const response = await fetch(`${API_BASE}/api/students/${encodeURIComponent(currentRollNo)}/attendance?period=${period}`);
+        const response = await fetch(
+          withInstitution(`${API_BASE}/api/students/${encodeURIComponent(currentRollNo)}/attendance?period=${period}`)
+        );
         
         if (!response.ok) {
             throw new Error('Failed to load attendance data');

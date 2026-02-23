@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Institution Editor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-4">
+  <div class="max-w-4xl mx-auto">
+    <div class="bg-white rounded-lg shadow-md p-6">
+      <div class="flex justify-between items-center mb-5">
+        <div>
+          <h1 id="pageTitle" class="text-2xl font-bold text-gray-800">Institution</h1>
+          <p id="pageSubtitle" class="text-sm text-gray-500 mt-1">Create or update institution profile</p>
+        </div>
+        <button id="backBtn" class="bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors">
+          Back
+        </button>
+      </div>
+
+      <div id="message" class="text-sm mb-3"></div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div class="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-2">
+          <input type="text" id="institutionName" placeholder="Institution name"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="institutionCode" placeholder="Institution code (e.g. UNI_LIMA)"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="institutionShortName" placeholder="Short name (e.g. UNMSM)"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <select id="institutionType" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+            <option value="university">University</option>
+            <option value="college">College</option>
+            <option value="school">School</option>
+            <option value="institute">Institute</option>
+            <option value="other">Other</option>
+          </select>
+          <input type="text" id="institutionWebsite" placeholder="Website (https://...)"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="institutionLogoUrl" placeholder="Logo URL (https://...)"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+            <input type="file" id="institutionLogoFile" accept="image/png,image/jpeg,image/webp"
+              class="md:col-span-2 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white">
+            <button id="uploadLogoBtn" class="bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors">
+              Upload Logo
+            </button>
+          </div>
+          <input type="email" id="contactEmail" placeholder="Contact email"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="contactPhone" placeholder="Contact phone"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="country" placeholder="Country"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="state" placeholder="State / Region"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="city" placeholder="City"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="postalCode" placeholder="Postal code"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="addressLine1" placeholder="Address line 1"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 md:col-span-2">
+          <input type="text" id="addressLine2" placeholder="Address line 2"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 md:col-span-2">
+          <input type="text" id="timezone" placeholder="Timezone (e.g. America/Lima)"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <select id="termSystem" class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+            <option value="semester">Semester</option>
+            <option value="trimester">Trimester</option>
+            <option value="quarter">Quarter</option>
+            <option value="annual">Annual</option>
+            <option value="other">Other</option>
+          </select>
+          <input type="text" id="academicYearLabel" placeholder="Academic year label (e.g. 2026-I)"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <input type="text" id="gradingScale" placeholder="Grading scale (e.g. 0-20)"
+            class="p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+          <label class="flex items-center gap-2 text-sm text-gray-700 md:col-span-2 px-1 py-2">
+            <input type="checkbox" id="isActive" checked>
+            Institution active
+          </label>
+        </div>
+        <div class="border border-gray-200 rounded-lg bg-gray-50 p-3">
+          <p class="text-sm font-semibold text-gray-700 mb-2">Logo Preview</p>
+          <div class="h-40 border border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-white overflow-hidden">
+            <img id="logoPreview" alt="Institution logo" class="max-h-full max-w-full object-contain hidden">
+            <span id="logoPlaceholder" class="text-xs text-gray-500">No logo configured</span>
+          </div>
+          <p class="text-xs text-gray-500 mt-2">Upload PNG/JPEG/WEBP (max 2MB)</p>
+        </div>
+      </div>
+
+      <div class="mt-5 flex items-center gap-2">
+        <button id="saveBtn" class="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+          Save and Return
+        </button>
+        <button id="cancelBtn" class="bg-white text-gray-800 border border-gray-300 px-5 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = (window.location.origin && window.location.origin !== "null")
+      ? window.location.origin
+      : "http://127.0.0.1:5001";
+
+    const authToken = localStorage.getItem("authToken");
+    const authUserRaw = localStorage.getItem("authUser");
+    const authUser = authUserRaw ? JSON.parse(authUserRaw) : null;
+    const allowedRoles = ["superadmin", "admin", "institution_admin", "institution_user"];
+
+    if (!authToken || !authUser || !allowedRoles.includes(authUser.role)) {
+      window.location.href = "login.html";
+    }
+
+    const isGlobalAdmin = authUser?.role === "superadmin" || authUser?.role === "admin";
+    const canEdit = isGlobalAdmin || authUser?.role === "institution_admin";
+    const canCreate = isGlobalAdmin;
+
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get("mode") === "create" ? "create" : "edit";
+    let institutionId = params.get("institutionId") || localStorage.getItem("activeInstitutionId") || "";
+    const returnToPath = String(params.get("returnTo") || "").trim();
+    let currentInstitution = null;
+
+    axios.defaults.headers.common.Authorization = `Bearer ${authToken}`;
+    axios.interceptors.request.use((config) => {
+      const scopedInstitutionId = localStorage.getItem("activeInstitutionId") || authUser?.institutionId || "";
+      if (scopedInstitutionId) {
+        config.headers["X-Institution-Id"] = scopedInstitutionId;
+      }
+      return config;
+    });
+
+    function setMessage(message, type = "info") {
+      const el = document.getElementById("message");
+      if (!el) return;
+      el.textContent = message || "";
+      el.className = "text-sm mb-3";
+      if (type === "error") el.classList.add("text-red-600");
+      if (type === "success") el.classList.add("text-green-600");
+      if (type === "info") el.classList.add("text-gray-600");
+    }
+
+    function canNavigateBackInApp() {
+      return window.history.length > 1;
+    }
+
+    function goToReturnToPath() {
+      if (!returnToPath) return false;
+      try {
+        const targetUrl = new URL(returnToPath, window.location.origin);
+        if (targetUrl.origin !== window.location.origin) return false;
+        window.location.href = targetUrl.pathname + targetUrl.search + targetUrl.hash;
+        return true;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function goBack(targetId = institutionId, { preferHistory = true } = {}) {
+      if (preferHistory && canNavigateBackInApp()) {
+        window.history.back();
+        return;
+      }
+      if (goToReturnToPath()) {
+        return;
+      }
+      const suffix = targetId ? `?institutionId=${encodeURIComponent(targetId)}` : "";
+      window.location.href = `admin-dashboard.html${suffix}`;
+    }
+
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function updateLogoPreview(url) {
+      const img = document.getElementById("logoPreview");
+      const placeholder = document.getElementById("logoPlaceholder");
+      if (!img || !placeholder) return;
+      const src = String(url || "").trim();
+      if (!src) {
+        img.removeAttribute("src");
+        img.classList.add("hidden");
+        placeholder.textContent = "No logo configured";
+        placeholder.classList.remove("hidden");
+        return;
+      }
+      img.onload = () => {
+        img.classList.remove("hidden");
+        placeholder.classList.add("hidden");
+      };
+      img.onerror = () => {
+        img.classList.add("hidden");
+        placeholder.textContent = "Could not load logo";
+        placeholder.classList.remove("hidden");
+      };
+      img.src = src;
+    }
+
+    function fillForm(data = {}) {
+      const set = (id, value) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.value = value ?? "";
+      };
+      set("institutionName", data.name || "");
+      set("institutionCode", data.code || "");
+      set("institutionShortName", data.shortName || "");
+      set("institutionType", data.type || "university");
+      set("institutionWebsite", data.website || "");
+      set("institutionLogoUrl", data.logoUrl || "");
+      set("contactEmail", data.contactEmail || "");
+      set("contactPhone", data.contactPhone || "");
+      set("country", data.country || "");
+      set("state", data.state || "");
+      set("city", data.city || "");
+      set("postalCode", data.postalCode || "");
+      set("addressLine1", data.addressLine1 || "");
+      set("addressLine2", data.addressLine2 || "");
+      set("timezone", data.timezone || "UTC");
+      set("termSystem", data.termSystem || "semester");
+      set("academicYearLabel", data.academicYearLabel || "");
+      set("gradingScale", data.gradingScale || "");
+      const isActive = document.getElementById("isActive");
+      if (isActive) isActive.checked = data.isActive !== false;
+      updateLogoPreview(data.logoUrl || "");
+    }
+
+    function readPayload() {
+      const get = (id) => document.getElementById(id)?.value?.trim() || "";
+      return {
+        name: get("institutionName"),
+        code: get("institutionCode"),
+        shortName: get("institutionShortName"),
+        type: get("institutionType"),
+        website: get("institutionWebsite"),
+        logoUrl: get("institutionLogoUrl"),
+        contactEmail: get("contactEmail"),
+        contactPhone: get("contactPhone"),
+        country: get("country"),
+        state: get("state"),
+        city: get("city"),
+        postalCode: get("postalCode"),
+        addressLine1: get("addressLine1"),
+        addressLine2: get("addressLine2"),
+        timezone: get("timezone") || "UTC",
+        termSystem: get("termSystem") || "semester",
+        academicYearLabel: get("academicYearLabel"),
+        gradingScale: get("gradingScale"),
+        isActive: document.getElementById("isActive")?.checked !== false
+      };
+    }
+
+    async function loadInstitution() {
+      if (mode === "create") {
+        fillForm({});
+        return;
+      }
+      if (!institutionId) {
+        setMessage("Institution not selected.", "error");
+        return;
+      }
+
+      const response = await axios.get(`${API_BASE}/api/auth/institutions`);
+      const rows = response?.data?.data || [];
+      currentInstitution = rows.find((row) => row.id === institutionId) || null;
+      if (!currentInstitution) {
+        setMessage("Institution not found in your scope.", "error");
+        return;
+      }
+      fillForm(currentInstitution);
+    }
+
+    async function uploadLogoIfSelected(targetInstitutionId) {
+      const fileInput = document.getElementById("institutionLogoFile");
+      const file = fileInput?.files?.[0];
+      if (!file) return null;
+      const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+      if (!allowedTypes.has(file.type)) {
+        throw new Error("Only PNG/JPEG/WEBP images are allowed");
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        throw new Error("Logo file must be 2MB or less");
+      }
+
+      const dataUrl = await fileToDataUrl(file);
+      const uploadResponse = await axios.post(
+        `${API_BASE}/api/auth/institutions/${targetInstitutionId}/logo-upload`,
+        { fileName: file.name, dataUrl }
+      );
+      return uploadResponse?.data?.data || null;
+    }
+
+    async function saveInstitution() {
+      if (!canEdit) {
+        setMessage("You have read-only access.", "error");
+        return;
+      }
+      if (mode === "create" && !canCreate) {
+        setMessage("Only platform admin can create institutions.", "error");
+        return;
+      }
+
+      const payload = readPayload();
+      if (!payload.name) {
+        setMessage("Institution name is required.", "error");
+        return;
+      }
+
+      const response = mode === "create"
+        ? await axios.post(`${API_BASE}/api/auth/institutions`, payload)
+        : await axios.patch(`${API_BASE}/api/auth/institutions/${institutionId}`, payload);
+
+      const saved = response?.data?.data || null;
+      const targetInstitutionId = saved?.id || institutionId;
+      if (!targetInstitutionId) {
+        throw new Error("Could not resolve institution id after save");
+      }
+
+      const uploaded = await uploadLogoIfSelected(targetInstitutionId);
+      const finalData = uploaded || saved;
+      if (finalData?.id) {
+        localStorage.setItem("activeInstitutionId", finalData.id);
+        if (finalData.name) localStorage.setItem("activeInstitutionName", finalData.name);
+      }
+      setMessage("Institution saved. Returning to dashboard...", "success");
+      setTimeout(() => goBack(finalData?.id || targetInstitutionId, { preferHistory: false }), 500);
+    }
+
+    function applyModeUI() {
+      const title = document.getElementById("pageTitle");
+      const subtitle = document.getElementById("pageSubtitle");
+      const uploadBtn = document.getElementById("uploadLogoBtn");
+      const saveBtn = document.getElementById("saveBtn");
+
+      if (mode === "create") {
+        title.textContent = "New Institution";
+        subtitle.textContent = "Complete profile and save to return";
+      } else {
+        title.textContent = "Edit Institution";
+        subtitle.textContent = "Update institution data and save to return";
+      }
+
+      if (uploadBtn) {
+        uploadBtn.disabled = mode === "create" || !canEdit;
+      }
+      if (saveBtn) {
+        saveBtn.disabled = !canEdit || (mode === "create" && !canCreate);
+      }
+      if (!canEdit) {
+        setMessage("Read-only mode.", "info");
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      applyModeUI();
+      document.getElementById("backBtn")?.addEventListener("click", () => goBack(undefined, { preferHistory: true }));
+      document.getElementById("cancelBtn")?.addEventListener("click", () => goBack(undefined, { preferHistory: true }));
+      document.getElementById("saveBtn")?.addEventListener("click", async () => {
+        try {
+          await saveInstitution();
+        } catch (error) {
+          setMessage(error?.response?.data?.message || error.message || "Failed to save institution", "error");
+        }
+      });
+
+      document.getElementById("uploadLogoBtn")?.addEventListener("click", async () => {
+        try {
+          if (!canEdit) {
+            setMessage("Read-only mode.", "error");
+            return;
+          }
+          if (!institutionId) {
+            setMessage("Save institution first, then upload logo.", "error");
+            return;
+          }
+          const uploaded = await uploadLogoIfSelected(institutionId);
+          if (uploaded) {
+            fillForm(uploaded);
+            setMessage("Logo uploaded.", "success");
+          }
+        } catch (error) {
+          setMessage(error?.response?.data?.message || error.message || "Failed to upload logo", "error");
+        }
+      });
+
+      document.getElementById("institutionLogoFile")?.addEventListener("change", async () => {
+        const file = document.getElementById("institutionLogoFile")?.files?.[0];
+        if (!file) return;
+        try {
+          const dataUrl = await fileToDataUrl(file);
+          updateLogoPreview(dataUrl);
+        } catch (error) {
+          setMessage("Could not preview selected logo.", "error");
+        }
+      });
+      document.getElementById("institutionLogoUrl")?.addEventListener("input", (event) => {
+        updateLogoPreview(event.target.value);
+      });
+
+      try {
+        await loadInstitution();
+      } catch (error) {
+        setMessage(error?.response?.data?.message || "Failed to load institution data", "error");
+      }
+    });
+  </script>
+</body>
+</html>

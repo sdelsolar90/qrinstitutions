@@ -7,6 +7,7 @@ const path = require('path');
 const rateLimit = require('express-rate-limit');
 const fs = require('fs');
 const crypto = require('crypto');
+const net = require("net");
 const helmet = require("helmet");
 //const sha256 = require('./sha256');
 const { execSync } = require('child_process');
@@ -15,9 +16,21 @@ const { execSync } = require('child_process');
 const User = require("./models/User");
 const Attendance = require("./models/Attendance");
 const StudentProfile = require("./models/StudentProfile");
+const AuthUser = require("./models/AuthUser");
+const Institution = require("./models/Institution");
+const Course = require("./models/Course");
+const CourseEnrollment = require("./models/CourseEnrollment");
+const TeacherCourseAssignment = require("./models/TeacherCourseAssignment");
 const studentProfileRoutes = require("./routes/studentProfile");
 const attendanceRoutes = require("./routes/attendance");
-const { generateQRCode, validateSession } = require('./qr-generator');
+const authRoutes = require("./routes/auth");
+const academicRoutes = require("./routes/academic");
+const { requireAuth, requireRoles } = require("./middleware/auth");
+const {
+  resolveInstitutionIdForRequest,
+  toInstitutionObjectId,
+} = require("./middleware/institution");
+const { generateQRCode, validateSession, getSessionDetails } = require('./qr-generator');
 
 // --- NEW: Import algorithm modules ---
 // Assuming these files exist in an 'algorithms' directory at the same level as server.js
@@ -49,11 +62,25 @@ requiredEnvVars.forEach(envVar => {
 const app = express();
 
 // Configuration Constants
-const CLASS_LAT = 30.2679634;
-const CLASS_LNG = 77.991887;
-const MAX_DISTANCE_METERS = 10000000000000;
+const ATTENDANCE_REQUIRE_ENROLLMENT = process.env.ATTENDANCE_REQUIRE_ENROLLMENT !== "false";
+const COURSE_DELIVERY_MODES = new Set(["in_person", "online", "hybrid"]);
+const DEFAULT_ATTENDANCE_POLICY = {
+  singleDevicePerDay: true,
+  requireSignature: true,
+  requireEnrollment: ATTENDANCE_REQUIRE_ENROLLMENT,
+  requireIpAllowlist: false,
+  ipAllowlist: [],
+  requireGeofence: false,
+  geofence: {
+    lat: null,
+    lng: null,
+    radiusMeters: 120,
+  },
+};
 
 const QR_CODE_DIR = path.join(__dirname, '../frontend/public/qrcodes');
+const INSTITUTION_LOGO_DIR =
+  process.env.INSTITUTION_LOGO_DIR || path.join(__dirname, '../frontend/public/institution-logos');
 
 // Middleware Setup
 app.use(
@@ -82,7 +109,8 @@ app.use(
         "img-src": [
           "'self'",
           "data:",
-          "https://ui-avatars.com"
+          "https://ui-avatars.com",
+          "https:"
         ]
       }
     }
@@ -91,7 +119,7 @@ app.use(
 
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "6mb" }));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // Request logging
@@ -141,6 +169,24 @@ catch (err) {
   process.exit(1);
 }
 
+// Institution logo directory setup
+try {
+  if (!fs.existsSync(INSTITUTION_LOGO_DIR)) {
+    fs.mkdirSync(INSTITUTION_LOGO_DIR, { recursive: true });
+    console.log(` Created institution logo directory at: ${INSTITUTION_LOGO_DIR}`);
+  }
+
+  app.use('/institution-logos', express.static(INSTITUTION_LOGO_DIR, {
+    maxAge: '7d',
+    setHeaders: (res) => {
+      res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    }
+  }));
+  console.log(` Serving institution logos from: ${INSTITUTION_LOGO_DIR}`);
+} catch (err) {
+  console.error(' Failed to setup institution logo directory:', err);
+}
+
 // Rate limiting for QR generation
 const qrLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -156,13 +202,56 @@ const qrLimiter = rateLimit({
   legacyHeaders: false
 });
 
+async function getAssignedCourseIdsForTeacher(teacherId, institutionId) {
+  const assignments = await TeacherCourseAssignment.find({
+    institutionId,
+    teacherId,
+    isActive: true
+  }).select("courseId");
+
+  return assignments
+    .map((assignment) => assignment.courseId)
+    .filter(Boolean)
+    .map((courseId) => String(courseId));
+}
+
+function buildCourseScopedFilter(courseId, allowedCourseIds, institutionId) {
+  if (!Array.isArray(allowedCourseIds)) {
+    if (courseId) {
+      return { institutionId, courseId };
+    }
+    return { institutionId };
+  }
+
+  if (!allowedCourseIds.length) {
+    return null;
+  }
+
+  if (courseId) {
+    if (!allowedCourseIds.includes(String(courseId))) {
+      return "forbidden";
+    }
+    return { institutionId, courseId };
+  }
+
+  return { institutionId, courseId: { $in: allowedCourseIds } };
+}
+
 
 // Routes
+app.use("/api/auth", authRoutes);
+app.use("/api/academic", academicRoutes);
 app.use("/api/students", studentProfileRoutes);
 app.use("/api/attendance", attendanceRoutes);
 
-app.get('/api/students/by-attendance-range', async (req, res) => {
+app.get(
+  '/api/students/by-attendance-range',
+  requireAuth,
+  requireRoles("superadmin", "admin", "institution_admin", "institution_user"),
+  async (req, res) => {
     try {
+        const institutionId = resolveInstitutionIdForRequest(req);
+        const institutionObjectId = toInstitutionObjectId(institutionId);
         const { min, max } = req.query;
         
         // Validate inputs
@@ -200,7 +289,7 @@ app.get('/api/students/by-attendance-range', async (req, res) => {
         }
 
         // Get all unique class dates (for calculating total possible classes)
-        const allDates = await Attendance.find().distinct('date');
+        const allDates = await Attendance.find({ institutionId }).distinct('date');
         const totalClasses = allDates.length;
         
         if (totalClasses === 0) {
@@ -213,10 +302,26 @@ app.get('/api/students/by-attendance-range', async (req, res) => {
         // Aggregation to get students with attendance in range
        const results = await StudentProfile.aggregate([
     {
+        $match: {
+            institutionId: institutionObjectId
+        }
+    },
+    {
         $lookup: {
             from: "users",  // Join with User collection
-            localField: "universityRollNo",
-            foreignField: "universityRollNo",
+            let: { rollNo: "$universityRollNo", institutionId: "$institutionId" },
+            pipeline: [
+                {
+                    $match: {
+                        $expr: {
+                            $and: [
+                                { $eq: ["$universityRollNo", "$$rollNo"] },
+                                { $eq: ["$institutionId", "$$institutionId"] }
+                            ]
+                        }
+                    }
+                }
+            ],
             as: "user"
         }
     },
@@ -230,7 +335,8 @@ app.get('/api/students/by-attendance-range', async (req, res) => {
                         $expr: { 
                             $and: [
                                 { $eq: ["$universityRollNo", "$$rollNo"] },
-                                { $eq: ["$status", "present"] }
+                                { $eq: ["$status", "present"] },
+                                { $eq: ["$institutionId", institutionObjectId] }
                             ]
                         }
                     }
@@ -320,6 +426,12 @@ app.get('/api/students/by-attendance-range', async (req, res) => {
         });
 
     } catch (error) {
+        if (error.status) {
+            return res.status(error.status).json({
+                status: "error",
+                message: error.message
+            });
+        }
         console.error("Error fetching students by attendance range:", error);
         res.status(500).json({ 
             status: "error", 
@@ -327,23 +439,67 @@ app.get('/api/students/by-attendance-range', async (req, res) => {
         });
     }
 });
-app.get('/api/attendance/dates', async (req, res) => {
+app.get(
+  '/api/attendance/dates',
+  requireAuth,
+  requireRoles("superadmin", "admin", "institution_admin", "institution_user", "teacher"),
+  async (req, res) => {
   try {
-    const dates = await Attendance.find().distinct('date');
+    const institutionId = resolveInstitutionIdForRequest(req);
+    const { courseId } = req.query;
+    let filter = { institutionId };
+
+    if (req.authUser.role === "teacher") {
+      const teacherCourseIds = await getAssignedCourseIdsForTeacher(req.authUser._id, institutionId);
+      filter = buildCourseScopedFilter(courseId, teacherCourseIds, institutionId);
+      if (filter === null) {
+        return res.json({ status: "success", data: [] });
+      }
+      if (filter === "forbidden") {
+        return res.status(403).json({ status: "error", message: "Course not assigned to this teacher" });
+      }
+    } else {
+      filter = buildCourseScopedFilter(courseId, null, institutionId);
+    }
+
+    const dates = await Attendance.find(filter).distinct('date');
     res.json({ status: "success", data: dates });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ status: "error", message: error.message });
+    }
     console.error("Error fetching attendance dates:", error);
     res.status(500).json({ status: "error", message: error.message });
   }
 });
-app.get('/api/attendance/by-date', async (req, res) => {
+app.get(
+  '/api/attendance/by-date',
+  requireAuth,
+  requireRoles("superadmin", "admin", "institution_admin", "institution_user", "teacher"),
+  async (req, res) => {
     try {
-        const { date } = req.query;
+        const institutionId = resolveInstitutionIdForRequest(req);
+        const { date, courseId } = req.query;
         if (!date) {
             return res.status(400).json({ error: 'Date parameter is required' });
         }
 
+        let filter = { institutionId };
+        if (req.authUser.role === "teacher") {
+            const teacherCourseIds = await getAssignedCourseIdsForTeacher(req.authUser._id, institutionId);
+            filter = buildCourseScopedFilter(courseId, teacherCourseIds, institutionId);
+            if (filter === null) {
+                return res.json({ status: "success", data: [] });
+            }
+            if (filter === "forbidden") {
+                return res.status(403).json({ status: "error", message: "Course not assigned to this teacher" });
+            }
+        } else {
+            filter = buildCourseScopedFilter(courseId, null, institutionId);
+        }
+
         const attendance = await Attendance.find({ 
+            ...filter,
             date: date,
             status: 'present'
         }).sort({ universityRollNo: 1 });
@@ -353,6 +509,9 @@ app.get('/api/attendance/by-date', async (req, res) => {
             data: attendance 
         });
     } catch (error) {
+        if (error.status) {
+            return res.status(error.status).json({ status: "error", message: error.message });
+        }
         console.error("Error fetching attendance by date:", error);
         res.status(500).json({ status: "error", message: error.message });
     }
@@ -361,19 +520,68 @@ app.get('/api/attendance/by-date', async (req, res) => {
 // ... (other parts of server.js) ...
 
 // QR Code Generation Endpoint
-app.get("/api/generate-qr", qrLimiter, async (req, res) => {
+app.get("/api/generate-qr", requireAuth, requireRoles("teacher"), qrLimiter, async (req, res) => {
   try {
-    console.log(`Generating QR code for IP: ${req.ip}`);
-    const qrData = await generateQRCode(req.ip); // qrData will now include expiresIn
+    const institutionId = resolveInstitutionIdForRequest(req);
+    const { courseId } = req.query;
+    if (!courseId) {
+      return res.status(400).json({
+        status: "error",
+        message: "courseId is required to generate QR"
+      });
+    }
+
+    const course = await Course.findOne({ _id: courseId, institutionId, isActive: true }).select("code name section");
+    if (!course) {
+      return res.status(404).json({
+        status: "error",
+        message: "Course not found"
+      });
+    }
+
+    if (req.authUser.role === "teacher") {
+      const assignment = await TeacherCourseAssignment.findOne({
+        institutionId,
+        teacherId: req.authUser._id,
+        courseId: course._id,
+        isActive: true
+      }).select("_id");
+
+      if (!assignment) {
+        return res.status(403).json({
+          status: "error",
+          message: "Teacher is not assigned to this course"
+        });
+      }
+    }
+
+    console.log(`Generating QR code for IP: ${req.ip} course=${course.code}-${course.section}`);
+    const qrData = await generateQRCode(req.ip, {
+      generatedBy: String(req.authUser._id),
+      generatedByRole: req.authUser.role,
+      generatedByName: req.authUser.name,
+      institutionId,
+      courseId: String(course._id),
+      courseCode: course.code,
+      courseName: course.name,
+      section: course.section
+    });
     
     console.log(` Generated QR code at: ${qrData.qrImage}`);
     res.json({
       status: "success",
       qrImage: qrData.qrImage,
       sessionId: qrData.sessionId,
-      expiresIn: qrData.expiresIn // <<< MODIFIED: Added expiresIn from qrData
+      expiresIn: qrData.expiresIn,
+      sessionContext: qrData.sessionContext
     });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({
+        status: "error",
+        message: error.message,
+      });
+    }
     console.error("QR generation error:", error);
     res.status(500).json({
       status: "error",
@@ -432,26 +640,80 @@ app.post("/api/validate-session", async (req, res) => {
   try {
     const { sessionId } = req.body;
     if (!sessionId) {
-      return res.status(400).json({ 
-        valid: false, 
-        message: "Session ID required" 
+      return res.status(400).json({
+        valid: false,
+        message: "Session ID required"
       });
     }
-    
-    const isValid = validateSession(sessionId);
-    res.json({ 
+
+    const sessionDetails = getSessionDetails(sessionId);
+    const isValid = Boolean(sessionDetails);
+    let courseDeliveryMode = "in_person";
+    let attendancePolicy = normalizeAttendancePolicy({}, courseDeliveryMode);
+
+    let institutionBrand = null;
+    if (isValid && sessionDetails.institutionId) {
+      const institutionId = String(sessionDetails.institutionId);
+      if (mongoose.Types.ObjectId.isValid(institutionId)) {
+        const institution = await Institution.findById(institutionId).select('name shortName logoUrl');
+        if (institution) {
+          institutionBrand = {
+            id: String(institution._id),
+            name: institution.shortName || institution.name || '',
+            logoUrl: institution.logoUrl || ''
+          };
+        }
+      }
+    }
+
+    if (isValid && sessionDetails.institutionId && sessionDetails.courseId) {
+      const institutionId = String(sessionDetails.institutionId);
+      const courseId = String(sessionDetails.courseId);
+      if (mongoose.Types.ObjectId.isValid(institutionId) && mongoose.Types.ObjectId.isValid(courseId)) {
+        const course = await Course.findOne({
+          _id: courseId,
+          institutionId,
+          isActive: true,
+        }).select("deliveryMode attendancePolicy code name section");
+        if (course) {
+          courseDeliveryMode = normalizeDeliveryMode(course.deliveryMode);
+          attendancePolicy = normalizeAttendancePolicy(course.attendancePolicy, courseDeliveryMode);
+        }
+      }
+    }
+
+    res.json({
       valid: isValid,
-      message: isValid ? "Valid session" : "Invalid or expired session ID"
+      message: isValid ? "Valid session" : "Invalid or expired session ID",
+      session: isValid
+        ? {
+            policy: {
+              singleDevicePerDay: attendancePolicy.singleDevicePerDay,
+              requireSignature: attendancePolicy.requireSignature,
+              requireEnrollment: attendancePolicy.requireEnrollment,
+              requireIpAllowlist: attendancePolicy.requireIpAllowlist,
+              requireGeofence: attendancePolicy.requireGeofence,
+            },
+            institutionId: sessionDetails.institutionId || null,
+            institutionBrand,
+            courseId: sessionDetails.courseId,
+            courseCode: sessionDetails.courseCode,
+            courseName: sessionDetails.courseName,
+            section: sessionDetails.section,
+            courseDeliveryMode,
+            requiresLocation: attendancePolicy.requireGeofence === true,
+            requiresSignature: attendancePolicy.requireSignature !== false,
+          }
+        : null
     });
   } catch (error) {
     console.error("Session validation error:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       valid: false,
       message: "Validation error"
     });
   }
 });
-
 app.get('/verify-attendance', (req, res) => {
     try {
         console.log('Raw query data:', req.query.data);
@@ -489,7 +751,11 @@ app.get('/verify-attendance', (req, res) => {
             return res.status(400).send('QR code expired');
         }
 
-        res.redirect(`/index.html?sessionId=${data.sessionId}`);
+        const sessionDetails = getSessionDetails(data.sessionId);
+        const institutionQuery = sessionDetails?.institutionId
+          ? `&institutionId=${encodeURIComponent(String(sessionDetails.institutionId))}`
+          : "";
+        res.redirect(`/index.html?sessionId=${data.sessionId}${institutionQuery}`);
     }  catch (error) {
         console.error('QR validation error:', error);
         res.status(400).send('Invalid QR code data');
@@ -536,6 +802,170 @@ function sha256(input) {
     }
 }
 
+function normalizeUpper(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function normalizeName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function namesMatch(left, right) {
+  if (!left || !right) return true;
+  return normalizeName(left) === normalizeName(right);
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function escapeRegex(value) {
+  return String(value || "").replace(/[.*+?^$()|[\]\\]/g, "\\$&");
+}
+
+function normalizeBoolean(value, fallback = false) {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+function toNullableNumber(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return numeric;
+}
+
+function normalizeDeliveryMode(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return "in_person";
+  if (!COURSE_DELIVERY_MODES.has(normalized)) return "in_person";
+  return normalized;
+}
+
+function normalizeIpAllowlist(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((entry) => String(entry || "").trim()).filter(Boolean))];
+}
+
+function normalizeAttendancePolicy(rawPolicy, deliveryMode = "in_person") {
+  const source = rawPolicy && typeof rawPolicy === "object" ? rawPolicy : {};
+  const geofenceSource = source.geofence && typeof source.geofence === "object" ? source.geofence : {};
+
+  return {
+    deliveryMode,
+    singleDevicePerDay: normalizeBoolean(source.singleDevicePerDay, DEFAULT_ATTENDANCE_POLICY.singleDevicePerDay),
+    requireSignature: normalizeBoolean(source.requireSignature, DEFAULT_ATTENDANCE_POLICY.requireSignature),
+    requireEnrollment: normalizeBoolean(source.requireEnrollment, DEFAULT_ATTENDANCE_POLICY.requireEnrollment),
+    requireIpAllowlist: normalizeBoolean(source.requireIpAllowlist, DEFAULT_ATTENDANCE_POLICY.requireIpAllowlist),
+    ipAllowlist: normalizeIpAllowlist(source.ipAllowlist),
+    requireGeofence: normalizeBoolean(source.requireGeofence, DEFAULT_ATTENDANCE_POLICY.requireGeofence),
+    geofence: {
+      lat: toNullableNumber(geofenceSource.lat),
+      lng: toNullableNumber(geofenceSource.lng),
+      radiusMeters: Math.max(
+        10,
+        Math.min(100000, toNullableNumber(geofenceSource.radiusMeters) ?? DEFAULT_ATTENDANCE_POLICY.geofence.radiusMeters)
+      ),
+    },
+  };
+}
+
+function normalizeClientIp(value) {
+  const first = String(value || "").split(",")[0].trim().toLowerCase();
+  if (!first) return "";
+  return first.startsWith("::ffff:") ? first.slice(7) : first;
+}
+
+function getClientIpFromRequest(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (forwarded) return normalizeClientIp(forwarded);
+  return normalizeClientIp(req.ip || req.socket?.remoteAddress || "");
+}
+
+function ipv4ToInt(ipv4) {
+  const parts = String(ipv4 || "").split(".");
+  if (parts.length !== 4) return null;
+  let value = 0;
+  for (const part of parts) {
+    const numeric = Number(part);
+    if (!Number.isInteger(numeric) || numeric < 0 || numeric > 255) return null;
+    value = (value << 8) + numeric;
+  }
+  return value >>> 0;
+}
+
+function isIpv4CidrMatch(ip, cidr) {
+  const [baseIp, prefixLengthRaw] = String(cidr || "").split("/");
+  const prefixLength = Number(prefixLengthRaw);
+  if (!Number.isInteger(prefixLength) || prefixLength < 0 || prefixLength > 32) return false;
+  const ipInt = ipv4ToInt(ip);
+  const baseInt = ipv4ToInt(baseIp);
+  if (ipInt === null || baseInt === null) return false;
+  const mask = prefixLength === 0 ? 0 : (0xffffffff << (32 - prefixLength)) >>> 0;
+  return (ipInt & mask) === (baseInt & mask);
+}
+
+function isIpAllowedByAllowlist(clientIp, allowlist) {
+  const ip = normalizeClientIp(clientIp);
+  if (!ip || !Array.isArray(allowlist) || !allowlist.length) return false;
+
+  return allowlist.some((entryRaw) => {
+    const entry = normalizeClientIp(entryRaw);
+    if (!entry) return false;
+
+    if (entry.includes("/")) {
+      return isIpv4CidrMatch(ip, entry);
+    }
+
+    if (net.isIP(ip) && net.isIP(entry) && ip === entry) return true;
+    return ip === entry;
+  });
+}
+
+function normalizeSignatureDataUrl(value) {
+  return String(value || "").trim();
+}
+
+function validateSignatureDataUrl(signatureDataUrl) {
+  if (!signatureDataUrl) {
+    return "Signature is required";
+  }
+
+  if (!signatureDataUrl.startsWith("data:image/png;base64,")) {
+    return "Invalid signature format";
+  }
+
+  if (signatureDataUrl.length > 700000) {
+    return "Signature image is too large";
+  }
+
+  const base64 = signatureDataUrl.split(",")[1] || "";
+  if (!/^[A-Za-z0-9+/=]+$/.test(base64)) {
+    return "Invalid signature encoding";
+  }
+
+  let buffer;
+  try {
+    buffer = Buffer.from(base64, "base64");
+  } catch (error) {
+    return "Invalid signature data";
+  }
+
+  if (!buffer || buffer.length < 120 || buffer.length > 500000) {
+    return "Invalid signature data size";
+  }
+
+  return null;
+}
+
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
@@ -545,110 +975,281 @@ app.get("/health", (req, res) => {
 });
 
 function validateAttendance(req, res, next) {
-  const required = ['name', 'universityRollNo', 'section', 'classRollNo', 'deviceFingerprint'];
-  const missing = required.filter(field => !req.body[field]);
+  const required = ['name', 'email', 'deviceFingerprint'];
+  const missing = required.filter((field) => !req.body[field]);
 
   if (missing.length) {
     return res.status(400).json({
-      status: "error",
-      message: `Missing required fields: ${missing.join(', ')}`
+      status: 'error',
+      message: `Missing required fields: ${missing.join(', ')}`,
     });
   }
 
-  if (!req.body.location || typeof req.body.location.lat !== "number" || typeof req.body.location.lng !== "number") {
-    return res.status(400).json({
-      status: "error",
-      message: "Location (lat, lng) is required and must be numeric"
-    });
-  }
   next();
 }
 
-app.post("/mark-attendance", validateAttendance, async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+app.post('/mark-attendance', validateAttendance, async (req, res) => {
   try {
-    const { universityRollNo, deviceFingerprint, location } = req.body;
+    const { deviceFingerprint, sessionId } = req.body;
+    const normalizedSignatureDataUrl = normalizeSignatureDataUrl(req.body.signatureDataUrl);
+    const submittedEmail = normalizeEmail(req.body.email);
+    const submittedName = String(req.body.name || '').trim();
+    const parsedLocation = req.body.location && typeof req.body.location === "object"
+      ? {
+          lat: Number(req.body.location.lat),
+          lng: Number(req.body.location.lng),
+        }
+      : null;
+    const hasValidLocation = Boolean(
+      parsedLocation &&
+      Number.isFinite(parsedLocation.lat) &&
+      Number.isFinite(parsedLocation.lng)
+    );
+
+    if (!sessionId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Session ID is required',
+      });
+    }
+
+    if (!submittedName) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Full name is required',
+      });
+    }
+
+    if (!isValidEmail(submittedEmail)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Valid email is required',
+      });
+    }
+
+    const sessionDetails = getSessionDetails(sessionId);
+    if (!sessionDetails) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Invalid or expired session. Please scan a fresh QR.',
+      });
+    }
+
+    if (!sessionDetails.courseId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Session is not linked to a course',
+      });
+    }
+
+    if (!sessionDetails.institutionId) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Session is not linked to an institution',
+      });
+    }
+
+    const institutionId = String(sessionDetails.institutionId);
     const today = new Date().toISOString().split('T')[0];
+    const clientIp = getClientIpFromRequest(req);
+    const userAgent = String(req.headers["user-agent"] || "");
+
+    const course = await Course.findOne({
+      _id: sessionDetails.courseId,
+      institutionId,
+      isActive: true,
+    }).select("code name section deliveryMode attendancePolicy");
+    if (!course) {
+      return res.status(404).json({
+        status: "error",
+        message: "Course not found or inactive",
+      });
+    }
+    const deliveryMode = normalizeDeliveryMode(course.deliveryMode);
+    const attendancePolicy = normalizeAttendancePolicy(course.attendancePolicy, deliveryMode);
+
+    if (attendancePolicy.requireIpAllowlist) {
+      if (!attendancePolicy.ipAllowlist.length) {
+        return res.status(400).json({
+          status: "error",
+          message: "Course policy requires IP allowlist but no ranges are configured",
+        });
+      }
+      if (!isIpAllowedByAllowlist(clientIp, attendancePolicy.ipAllowlist)) {
+        return res.status(403).json({
+          status: "error",
+          message: "Attendance is only allowed from approved campus network ranges",
+        });
+      }
+    }
+
+    let distance = null;
+    if (attendancePolicy.requireGeofence) {
+      if (!hasValidLocation) {
+        return res.status(400).json({
+          status: "error",
+          message: "This course requires geolocation. Enable location and try again.",
+        });
+      }
+      const geofenceLat = attendancePolicy.geofence?.lat;
+      const geofenceLng = attendancePolicy.geofence?.lng;
+      const geofenceRadius = attendancePolicy.geofence?.radiusMeters || 120;
+      if (!Number.isFinite(geofenceLat) || !Number.isFinite(geofenceLng)) {
+        return res.status(400).json({
+          status: "error",
+          message: "Course geofence is not configured. Contact your administrator.",
+        });
+      }
+      distance = getDistanceFromLatLngInMeters(parsedLocation.lat, parsedLocation.lng, geofenceLat, geofenceLng);
+      if (distance > geofenceRadius) {
+        return res.status(400).json({
+          status: "error",
+          message: `You must be within ${geofenceRadius} meters of the class location. Current distance: ${distance.toFixed(0)}m`,
+        });
+      }
+    }
+
+    if (attendancePolicy.requireSignature) {
+      const signatureValidationError = validateSignatureDataUrl(normalizedSignatureDataUrl);
+      if (signatureValidationError) {
+        return res.status(400).json({
+          status: 'error',
+          message: signatureValidationError,
+        });
+      }
+    } else if (normalizedSignatureDataUrl) {
+      const optionalSignatureError = validateSignatureDataUrl(normalizedSignatureDataUrl);
+      if (optionalSignatureError) {
+        return res.status(400).json({
+          status: "error",
+          message: optionalSignatureError,
+        });
+      }
+    }
+
+    const signatureHash = normalizedSignatureDataUrl
+      ? crypto.createHash('sha256').update(normalizedSignatureDataUrl.split(',')[1]).digest('hex')
+      : null;
+
+    const nameRegex = new RegExp(`^${escapeRegex(submittedName)}$`, 'i');
+    const enrollment = await CourseEnrollment.findOne({
+      institutionId,
+      courseId: sessionDetails.courseId,
+      isActive: true,
+      $or: [
+        { universityRollNo: submittedEmail },
+        { universityRollNo: submittedEmail.toUpperCase() },
+        { fullName: nameRegex },
+      ],
+    });
+
+    if (!enrollment && attendancePolicy.requireEnrollment) {
+      return res.status(400).json({
+        status: "error",
+        message: "You are not enrolled in this course roster",
+      });
+    }
+
+    if (enrollment && !namesMatch(enrollment.fullName, submittedName)) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Student name does not match course enrollment record',
+      });
+    }
+
+    const canonicalStudentId = submittedEmail;
+    const canonicalName = enrollment?.fullName || submittedName;
+    const canonicalSection = enrollment?.section || normalizeUpper(course.section || sessionDetails.section || '') || 'N/A';
+    const canonicalClassRollNo = enrollment?.classRollNo || 'N/A';
 
     const [existing, existingDevice] = await Promise.all([
-      Attendance.findOne({ universityRollNo, date: today }).session(session),
-      Attendance.findOne({ deviceFingerprint, date: today }).session(session)
+      Attendance.findOne({
+        institutionId,
+        date: today,
+        courseId: sessionDetails.courseId,
+        $or: [{ studentEmail: canonicalStudentId }, { universityRollNo: canonicalStudentId }],
+      }),
+      attendancePolicy.singleDevicePerDay
+        ? Attendance.findOne({ institutionId, deviceFingerprint, date: today, courseId: sessionDetails.courseId })
+        : Promise.resolve(null),
     ]);
 
     if (existing) {
-      await session.abortTransaction();
-      session.endSession();
       return res.status(400).json({
-        status: "error",
-        message: "You've already marked attendance today"
+        status: 'error',
+        message: "You've already marked attendance for this course today",
       });
     }
 
-    if (existingDevice) {
-      await session.abortTransaction();
-      session.endSession();
+    if (attendancePolicy.singleDevicePerDay && existingDevice) {
       return res.status(400).json({
-        status: "error",
-        message: "This device has already been used to mark attendance today"
-      });
-    }
-
-    const distance = getDistanceFromLatLngInMeters(
-      location.lat, location.lng,
-      CLASS_LAT, CLASS_LNG
-    );
-
-    if (distance > MAX_DISTANCE_METERS) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({
-        status: "error",
-        message: `You must be within ${MAX_DISTANCE_METERS} meters of the classroom to mark attendance. Current distance: ${distance.toFixed(0)}m`
+        status: 'error',
+        message: 'This device has already been used for this course today',
       });
     }
 
     const student = await User.findOneAndUpdate(
-      { universityRollNo },
+      { institutionId, universityRollNo: canonicalStudentId },
       {
+        $set: {
+          name: canonicalName,
+          email: canonicalStudentId,
+        },
         $setOnInsert: {
-          name: req.body.name,
-          section: req.body.section,
-          classRollNo: req.body.classRollNo
-        }
+          institutionId,
+          section: canonicalSection,
+          classRollNo: canonicalClassRollNo,
+        },
       },
-      { new: true, upsert: true, session }
+      { new: true, upsert: true }
     );
 
-    const attendance = await Attendance.create([{
-      ...req.body,
+    const attendance = await Attendance.create({
+      institutionId,
+      name: canonicalName,
+      studentEmail: canonicalStudentId,
+      universityRollNo: canonicalStudentId,
+      section: canonicalSection,
+      classRollNo: canonicalClassRollNo,
       date: today,
       time: new Date().toLocaleTimeString('en-IN', { hour12: false }),
-      status: "present",
+      sessionId,
+      courseId: sessionDetails.courseId,
+      courseCode: course.code || sessionDetails.courseCode,
+      courseName: course.name || sessionDetails.courseName,
+      generatedBy: sessionDetails.generatedBy,
+      generatedByRole: sessionDetails.generatedByRole,
+      status: 'present',
       studentId: student._id,
-      distanceFromClass: distance
-    }], { session });
+      distanceFromClass: distance,
+      location: hasValidLocation ? parsedLocation : undefined,
+      deviceFingerprint,
+      signatureDataUrl: normalizedSignatureDataUrl || undefined,
+      signatureHash: signatureHash || undefined,
+      ipAddress: clientIp || null,
+      userAgent,
+      courseDeliveryMode: deliveryMode,
+      attendancePolicySnapshot: attendancePolicy,
+    });
 
-    await session.commitTransaction();
-    session.endSession();
     res.json({
-      status: "success",
-      message: "Attendance marked successfully",
-      data: attendance[0]
+      status: 'success',
+      message: 'Attendance marked successfully',
+      data: attendance,
     });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
-    console.error("Attendance error:", error);
-    res.status(500).json({ status: "error", message: error.message });
+    console.error('Attendance error:', error);
+    res.status(500).json({ status: 'error', message: error.message });
   }
 });
-
 app.get('/api/students/profile', async (req, res) => {
     try {
         const { rollNo } = req.query;
+        const institutionId = String(req.query.institutionId || "").trim();
         console.log(`[PROFILE] Attempting to find profile for rollNo: ${rollNo}`); // ADD THIS
-        const student = await StudentProfile.findOne({ universityRollNo: rollNo });
+        const filter = { universityRollNo: rollNo };
+        if (institutionId) filter.institutionId = institutionId;
+        const student = await StudentProfile.findOne(filter);
         
         if (!student) {
             console.log(`[PROFILE] Student not found: ${rollNo}`); // ADD THIS
@@ -682,8 +1283,11 @@ app.get("/api/students/:rollNo/attendance", async (req, res) => {
     try {
         const { rollNo } = req.params;
         const period = req.query.period || 'current';
+        const institutionId = String(req.query.institutionId || "").trim();
         
-        const student = await StudentProfile.findOne({ universityRollNo: rollNo });
+        const studentFilter = { universityRollNo: rollNo };
+        if (institutionId) studentFilter.institutionId = institutionId;
+        const student = await StudentProfile.findOne(studentFilter);
         if (!student) {
             return res.status(404).json({ error: 'Student not found' });
         }
@@ -705,7 +1309,11 @@ app.get("/api/students/:rollNo/attendance", async (req, res) => {
 
         const { start, end } = dateRange[period] ? dateRange[period]() : dateRange.current();
 
+        const attendanceFilterBase = {};
+        if (institutionId) attendanceFilterBase.institutionId = institutionId;
+
         const allAttendance = await Attendance.find({
+            ...attendanceFilterBase,
             date: {
                 $gte: new Date(start).toISOString().split('T')[0],
                 $lte: new Date(end).toISOString().split('T')[0]
@@ -715,6 +1323,7 @@ app.get("/api/students/:rollNo/attendance", async (req, res) => {
         const totalClasses = allAttendance.length;
 
         const attendance = await Attendance.find({
+            ...attendanceFilterBase,
             universityRollNo: rollNo,
             date: {
                 $gte: new Date(start).toISOString().split('T')[0],
@@ -832,13 +1441,16 @@ app.get('/api/navigation/shortest-path', async (req, res) => {
 app.get('/api/students/:rollNo/recommendations', async (req, res) => {
     const { rollNo } = req.params;
     const { type } = req.query; // e.g., "course", "job", "skill"
+    const institutionId = String(req.query.institutionId || "").trim();
 
     if (!type) {
         return res.status(400).json({ status: "error", message: "Recommendation type is required (e.g., 'course', 'job')." });
     }
 
     try {
-        const studentProfile = await StudentProfile.findOne({ universityRollNo: rollNo });
+        const profileFilter = { universityRollNo: rollNo };
+        if (institutionId) profileFilter.institutionId = institutionId;
+        const studentProfile = await StudentProfile.findOne(profileFilter);
         if (!studentProfile) {
             return res.status(404).json({ status: "error", message: "Student profile not found." });
         }
@@ -881,6 +1493,7 @@ app.get('/api/students/:rollNo/community', async (req, res) => {
     const { rollNo } = req.params;
     const depth = parseInt(req.query.depth) || 2; // Default depth
     const algorithm = req.query.algorithm || 'bfs'; // 'bfs' or 'dfs'
+    const institutionId = String(req.query.institutionId || "").trim();
 
     if (algorithm !== 'bfs' && algorithm !== 'dfs') {
         return res.status(400).json({ status: "error", message: "Invalid algorithm type. Use 'bfs' or 'dfs'." });
@@ -890,7 +1503,9 @@ app.get('/api/students/:rollNo/community', async (req, res) => {
     }
 
     try {
-        const studentExists = await StudentProfile.findOne({ universityRollNo: rollNo }).select('_id');
+        const studentFilter = { universityRollNo: rollNo };
+        if (institutionId) studentFilter.institutionId = institutionId;
+        const studentExists = await StudentProfile.findOne(studentFilter).select('_id');
         if (!studentExists) {
             return res.status(404).json({ status: "error", message: "Starting student profile not found." });
         }
@@ -899,7 +1514,9 @@ app.get('/api/students/:rollNo/community', async (req, res) => {
         // This would typically be constructed by querying relationships from the database.
         // For example, find all students in the same section, or explicit friend connections.
         // Let's mock a simple graph structure for now.
-        const allStudents = await StudentProfile.find().select('universityRollNo name section').lean();
+        const allStudents = await StudentProfile.find(institutionId ? { institutionId } : {})
+          .select('universityRollNo name section')
+          .lean();
         const mockConnections = [ // Simulate some connections
             { from: allStudents[0]?.universityRollNo, to: allStudents[1]?.universityRollNo, type: "classmate" },
             { from: allStudents[0]?.universityRollNo, to: allStudents[2]?.universityRollNo, type: "project_partner" },
@@ -942,19 +1559,125 @@ app.use((err, req, res, next) => {
   res.status(500).json({ status: "error", message: "Internal server error" });
 });
 
+async function dropIndexIfExists(model, indexName) {
+  try {
+    const exists = await model.collection.indexExists(indexName);
+    if (exists) {
+      await model.collection.dropIndex(indexName);
+      console.log(`Dropped legacy index: ${model.collection.collectionName}.${indexName}`);
+    }
+  } catch (error) {
+    const message = String(error?.message || "");
+    if (message.includes("index not found")) return;
+    console.warn(`Could not drop index ${model.collection.collectionName}.${indexName}: ${message}`);
+  }
+}
+
+async function ensureDefaultInstitutionAndBackfill() {
+  let defaultInstitution = await Institution.findOne({ code: "MAIN" }).select("_id name code");
+  if (!defaultInstitution) {
+    defaultInstitution = await Institution.findOne().sort({ createdAt: 1 }).select("_id name code");
+  }
+
+  if (!defaultInstitution) {
+    defaultInstitution = await Institution.create({
+      name: "Main Institution",
+      code: "MAIN",
+      isActive: true,
+      createdBy: null,
+    });
+    console.log("Created default institution MAIN");
+  }
+
+  const defaultInstitutionId = defaultInstitution._id;
+  const missingInstitutionFilter = {
+    $or: [{ institutionId: { $exists: false } }, { institutionId: null }],
+  };
+
+  const [authUsers, courses, assignments, enrollments, attendances, users, profiles] =
+    await Promise.all([
+      AuthUser.updateMany(missingInstitutionFilter, { $set: { institutionId: defaultInstitutionId } }),
+      Course.updateMany(missingInstitutionFilter, { $set: { institutionId: defaultInstitutionId } }),
+      TeacherCourseAssignment.updateMany(missingInstitutionFilter, { $set: { institutionId: defaultInstitutionId } }),
+      CourseEnrollment.updateMany(missingInstitutionFilter, { $set: { institutionId: defaultInstitutionId } }),
+      Attendance.updateMany(missingInstitutionFilter, { $set: { institutionId: defaultInstitutionId } }),
+      User.updateMany(missingInstitutionFilter, { $set: { institutionId: defaultInstitutionId } }),
+      StudentProfile.updateMany(missingInstitutionFilter, { $set: { institutionId: defaultInstitutionId } }),
+    ]);
+
+  console.log(
+    "Institution backfill:",
+    {
+      authUsers: authUsers.modifiedCount || 0,
+      courses: courses.modifiedCount || 0,
+      assignments: assignments.modifiedCount || 0,
+      enrollments: enrollments.modifiedCount || 0,
+      attendances: attendances.modifiedCount || 0,
+      users: users.modifiedCount || 0,
+      profiles: profiles.modifiedCount || 0,
+    }
+  );
+
+  return defaultInstitution;
+}
+
+async function ensureIndexes() {
+  await dropIndexIfExists(Course, "course_code_section_idx");
+  await dropIndexIfExists(TeacherCourseAssignment, "teacher_course_unique_idx");
+  await dropIndexIfExists(CourseEnrollment, "course_enrollment_unique_idx");
+  await dropIndexIfExists(CourseEnrollment, "course_section_classroll_idx");
+  await dropIndexIfExists(CourseEnrollment, "enrollment_rollno_idx");
+  await dropIndexIfExists(StudentProfile, "student_rollno_profile_idx");
+  await dropIndexIfExists(StudentProfile, "universityRollNo_1");
+  await dropIndexIfExists(User, "universityRollNo_1");
+  await dropIndexIfExists(Attendance, "student_course_date_attendance_idx");
+  await dropIndexIfExists(Attendance, "device_course_date_attendance_idx");
+  await dropIndexIfExists(Attendance, "course_date_attendance_idx");
+
+  await Institution.createIndexes([
+    { key: { code: 1 }, name: "institution_code_unique_idx", unique: true },
+    { key: { name: 1 }, name: "institution_name_unique_idx", unique: true },
+  ]);
+
+  await Attendance.createIndexes([
+    { key: { institutionId: 1, universityRollNo: 1, courseId: 1, date: 1 }, name: "institution_student_course_date_attendance_idx" },
+    { key: { institutionId: 1, deviceFingerprint: 1, courseId: 1, date: 1 }, name: "institution_device_course_date_attendance_idx" },
+    { key: { institutionId: 1, courseId: 1, date: 1 }, name: "institution_course_date_attendance_idx" },
+  ]);
+  await StudentProfile.createIndexes([
+    { key: { institutionId: 1, universityRollNo: 1 }, name: "institution_student_rollno_profile_idx", unique: true },
+  ]);
+  await User.createIndexes([
+    { key: { institutionId: 1, universityRollNo: 1 }, name: "institution_user_rollno_unique_idx", unique: true },
+  ]);
+  await AuthUser.createIndexes([
+    { key: { email: 1 }, name: "authuser_email_idx", unique: true },
+    { key: { institutionId: 1, role: 1, isActive: 1, name: 1 }, name: "authuser_institution_role_active_name_idx" },
+  ]);
+  await Course.createIndexes([
+    { key: { institutionId: 1, code: 1, section: 1 }, name: "institution_course_code_section_idx", unique: true },
+  ]);
+  await TeacherCourseAssignment.createIndexes([
+    { key: { institutionId: 1, teacherId: 1, courseId: 1 }, name: "institution_teacher_course_unique_idx", unique: true },
+  ]);
+  await CourseEnrollment.createIndexes([
+    { key: { institutionId: 1, courseId: 1, universityRollNo: 1 }, name: "institution_course_enrollment_unique_idx", unique: true },
+    { key: { institutionId: 1, courseId: 1, section: 1, classRollNo: 1 }, name: "institution_course_section_classroll_idx" },
+    { key: { institutionId: 1, universityRollNo: 1 }, name: "institution_enrollment_rollno_idx" },
+  ]);
+}
+
 // Database Connection
 mongoose.connect(process.env.MONGO_URI)
   .then(async () => {
     console.log(" Connected to MongoDB");
     try {
-      await Attendance.createIndexes([
-        { key: { universityRollNo: 1, date: 1 }, name: "student_date_attendance_idx" },
-        { key: { deviceFingerprint: 1, date: 1 }, name: "device_date_attendance_idx" }
-      ]);
-      await StudentProfile.createIndexes([
-        { key: { universityRollNo: 1 }, name: "student_rollno_profile_idx", unique: true }
-      ]);
-      console.log("Indexes ensured/created for Attendance and StudentProfile.");
+      const defaultInstitution = await ensureDefaultInstitutionAndBackfill();
+      await ensureIndexes();
+      console.log(
+        "Indexes ensured/created with institution scope for Attendance, StudentProfile, User, AuthUser, Course, TeacherCourseAssignment and CourseEnrollment.",
+      );
+      console.log(`Active default institution: ${defaultInstitution.name} (${defaultInstitution.code})`);
     } catch (err) {
       console.error("Index creation/ensuring error:", err);
     }

@@ -1,170 +1,345 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Admin QR Generator</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Course</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-    <style>
-        body {
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        .spinner {
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-    </style>
 </head>
-<body class="bg-gray-100">
-    <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center">
-        <h1 class="text-2xl font-bold mb-6">Admin QR Generator</h1>
-        
-        <div class="flex justify-center mb-6">
-            <div id="qr-container" class="relative">
-                <img id="qr-image" src="" alt="QR Code" class="w-64 h-64 border-4 border-blue-500 rounded-lg hidden">
-                <div id="qr-loading" class="absolute inset-0 flex items-center justify-center hidden">
-                    <div class="spinner rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-                </div>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white p-8 rounded-lg shadow-lg max-w-2xl w-full">
+        <div class="flex items-center justify-between mb-4 gap-2">
+            <h1 class="text-2xl font-bold">Select Course</h1>
+            <div class="flex gap-2">
+                <a id="viewDataHeaderLink" href="teacher-dashboard.html" class="text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded border border-blue-200 hover:bg-blue-200">View Data</a>
+                <button id="logoutBtn" class="text-sm bg-gray-700 text-white px-3 py-1 rounded hover:bg-gray-800">Logout</button>
             </div>
         </div>
-        
+
+        <p id="staffMeta" class="text-xs text-gray-500 mb-4"></p>
         <div id="error-message" class="text-red-500 mb-4 min-h-6"></div>
-        
-        <div id="session-info" class="text-sm text-gray-600 mb-4 hidden">
-            Session ID: <span id="session-id" class="font-mono"></span><br>
-            Expires in: <span id="expiry-time"></span> </div>
-        
-        <button id="generate-btn" class="bg-blue-600 text-white py-2 px-6 rounded hover:bg-blue-700 transition-colors">
-            Generate QR Code
-        </button>
+
+        <div class="mb-4">
+            <label for="course-search" class="block text-sm font-medium text-gray-700 mb-1">Search Course</label>
+            <input
+                id="course-search"
+                type="text"
+                class="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                placeholder="Code, name, section, day or time (e.g. math, A, mon, 08:30)"
+            >
+        </div>
+
+        <div class="mb-4">
+            <label for="course-select" class="block text-sm font-medium text-gray-700 mb-1">Course / Section</label>
+            <select id="course-select" class="w-full border border-gray-300 rounded px-3 py-2 text-sm h-11" size="1"></select>
+            <p id="course-hint" class="text-xs text-gray-500 mt-1"></p>
+            <button id="load-more-courses" class="hidden mt-2 text-xs text-blue-700 hover:text-blue-900 underline" type="button">
+                Load more courses
+            </button>
+        </div>
+
+        <div class="flex justify-between items-center gap-2">
+            <a id="viewDataMainLink" href="teacher-dashboard.html" class="bg-indigo-100 text-indigo-800 py-2 px-4 rounded border border-indigo-200 hover:bg-indigo-200 transition-colors">
+                View Attendance
+            </a>
+            <button id="continue-btn" class="bg-blue-600 text-white py-2 px-6 rounded hover:bg-blue-700 transition-colors">
+                Continue to QR
+            </button>
+        </div>
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:5000'; // Match your server address
-        let currentSessionId = null;
-        let expiryInterval = null;
-        let autoRefreshTimerId = null; // <<< MODIFIED: Added autoRefreshTimerId
+        const API_BASE =
+            (window.location.origin && window.location.origin !== "null")
+                ? window.location.origin
+                : "http://127.0.0.1:5001";
 
-        // MODIFIED: updateExpiryTimer to take milliseconds and calculate min/sec
-        function updateExpiryTimer(expiresInMs) {
-            clearInterval(expiryInterval);
+        const authToken = localStorage.getItem("authToken");
+        const authUserRaw = localStorage.getItem("authUser");
+        const authUser = authUserRaw ? JSON.parse(authUserRaw) : null;
+        const allowedRoles = ["teacher"];
 
-            let remainingTimeMs = expiresInMs;
-
-            const updateDisplay = () => {
-                if (remainingTimeMs <= 0) {
-                    clearInterval(expiryInterval);
-                    document.getElementById('expiry-time').textContent = `0m 0s - Expired`;
-                    document.getElementById('qr-image').classList.add('hidden');
-                    showError('QR code has expired. Please generate a new one.');
-                    currentSessionId = null; 
-                    // No need to clear autoRefreshTimerId here as generateQR handles its own timer
-                    return;
-                }
-
-                const minutes = Math.floor(remainingTimeMs / 60000);
-                const seconds = Math.floor((remainingTimeMs % 60000) / 1000);
-                document.getElementById('expiry-time').textContent = `${minutes}m ${seconds}s`;
-            };
-
-            updateDisplay(); // Initial display
-
-            expiryInterval = setInterval(() => {
-                remainingTimeMs -= 1000;
-                updateDisplay();
-            }, 1000);
+        if (!authToken || !authUser || !allowedRoles.includes(authUser.role)) {
+            window.location.href = "login.html";
         }
 
+        function getDataDashboardHrefByRole(role) {
+            return role === "teacher" ? "teacher-dashboard.html" : "admin-dashboard.html";
+        }
+
+        axios.defaults.headers.common.Authorization = `Bearer ${authToken}`;
+        axios.interceptors.request.use((config) => {
+            const scopedInstitutionId = localStorage.getItem('activeInstitutionId') || authUser?.institutionId || '';
+            if (scopedInstitutionId) {
+                config.headers['X-Institution-Id'] = scopedInstitutionId;
+            }
+            return config;
+        });
+        axios.interceptors.response.use(
+            (response) => response,
+            (error) => {
+                const status = error?.response?.status;
+                if (status === 401 || status === 403) {
+                    localStorage.removeItem("authToken");
+                    localStorage.removeItem("authUser");
+                    localStorage.removeItem("adminToken");
+                    localStorage.removeItem("activeInstitutionId");
+                    localStorage.removeItem("activeInstitutionName");
+                    window.location.href = "login.html";
+                }
+                return Promise.reject(error);
+            }
+        );
+
+        const DAY_LABELS = {
+            MON: "Mon",
+            TUE: "Tue",
+            WED: "Wed",
+            THU: "Thu",
+            FRI: "Fri",
+            SAT: "Sat",
+            SUN: "Sun"
+        };
+
+        let availableCourses = [];
+        let coursePage = 1;
+        let hasNextCoursePage = false;
+        let totalCourses = 0;
+        let lastSearchQuery = "";
+        let searchDebounceId = null;
+        let requestSeq = 0;
+        let activeRequestSeq = 0;
+        const COURSE_PAGE_SIZE = 80;
+
         function showError(message) {
-            const errorElement = document.getElementById('error-message');
-            errorElement.textContent = message;
-            // errorElement.classList.remove('hidden'); // Assuming showError implies visibility
+            const errorElement = document.getElementById("error-message");
+            if (errorElement) errorElement.textContent = message;
         }
 
         function clearError() {
-            const errorElement = document.getElementById('error-message');
-            errorElement.textContent = '';
-            // errorElement.classList.add('hidden'); // Assuming clearError implies invisibility
+            const errorElement = document.getElementById("error-message");
+            if (errorElement) errorElement.textContent = "";
         }
 
-        async function generateQR() {
-            const generateBtn = document.getElementById('generate-btn');
-            
-            // MODIFIED: Clear previous auto-refresh timer
-            if (autoRefreshTimerId) {
-                clearTimeout(autoRefreshTimerId);
-                autoRefreshTimerId = null;
+        function normalizeSearchText(value) {
+            return String(value || "").trim();
+        }
+
+        function formatCourseDays(daysOfWeek) {
+            if (!Array.isArray(daysOfWeek) || !daysOfWeek.length) return "";
+            return daysOfWeek.map((day) => DAY_LABELS[day] || day).join("/");
+        }
+
+        function formatCourseSchedule(course) {
+            const daysText = formatCourseDays(course.daysOfWeek);
+            if (!daysText || !course.startTime || !course.endTime) {
+                return "No schedule";
+            }
+            return `${daysText} ${course.startTime}-${course.endTime}`;
+        }
+
+        function getCoursePriorityTag(course) {
+            if (course.inScheduleWindow) return "[NOW]";
+            if (course.scheduledToday) return "[TODAY]";
+            return "";
+        }
+
+        function renderCourseOptions() {
+            const courseSearch = document.getElementById("course-search");
+            const courseSelect = document.getElementById("course-select");
+            const courseHint = document.getElementById("course-hint");
+            const continueBtn = document.getElementById("continue-btn");
+            const loadMoreBtn = document.getElementById("load-more-courses");
+            if (!courseSelect || !courseHint || !continueBtn) return;
+
+            if (!availableCourses.length) {
+                const hasSearchQuery = Boolean(lastSearchQuery);
+                courseSelect.innerHTML = hasSearchQuery
+                    ? '<option value="">No match for your search</option>'
+                    : '<option value="">No courses assigned</option>';
+                courseSelect.disabled = true;
+                if (courseSearch && !hasSearchQuery) {
+                    courseSearch.disabled = false;
+                }
+                continueBtn.disabled = true;
+                courseHint.textContent = hasSearchQuery
+                    ? "Try another search query."
+                    : "Ask an admin to assign at least one course.";
+                if (loadMoreBtn) {
+                    loadMoreBtn.classList.add("hidden");
+                    loadMoreBtn.disabled = true;
+                }
+                return;
             }
 
-            generateBtn.disabled = true;
-            generateBtn.textContent = "Generating...";
-            clearError();
-            document.getElementById('qr-image').classList.add('hidden');
-            document.getElementById('qr-loading').classList.remove('hidden');
-            document.getElementById('session-info').classList.add('hidden');
+            if (courseSearch) {
+                courseSearch.disabled = false;
+            }
+
+            const previousValue = courseSelect.value || localStorage.getItem("lastSelectedCourseId") || "";
+            courseSelect.innerHTML = "";
+
+            availableCourses.forEach((course) => {
+                const option = document.createElement("option");
+                option.value = course.id;
+                const priorityTag = getCoursePriorityTag(course);
+                option.textContent = `${course.code} - ${course.name} (Section ${course.section}) ${priorityTag} | ${formatCourseSchedule(course)}`.trim();
+                courseSelect.appendChild(option);
+            });
+
+            if (availableCourses.some((course) => course.id === previousValue)) {
+                courseSelect.value = previousValue;
+            } else {
+                courseSelect.value = availableCourses[0].id;
+            }
+
+            courseSelect.disabled = false;
+            continueBtn.disabled = false;
+            const totalLabel = totalCourses > 0 ? totalCourses : availableCourses.length;
+            courseHint.textContent = `Showing ${availableCourses.length} of ${totalLabel}. Search is dynamic by code, name, section, day or time.`;
+
+            if (loadMoreBtn) {
+                if (hasNextCoursePage) {
+                    loadMoreBtn.classList.remove("hidden");
+                    loadMoreBtn.disabled = false;
+                } else {
+                    loadMoreBtn.classList.add("hidden");
+                    loadMoreBtn.disabled = true;
+                }
+            }
+        }
+
+        async function loadCourses({ query = "", append = false } = {}) {
+            const requestId = ++requestSeq;
+            activeRequestSeq = requestId;
+            const targetPage = append ? coursePage + 1 : 1;
 
             try {
-                const response = await axios.get(`${API_BASE}/api/generate-qr`);
-                const data = response.data;
-                
-                if (data.status === "success" && data.qrImage && data.sessionId && typeof data.expiresIn === 'number') {
-                    const qrImage = document.getElementById('qr-image');
-                    qrImage.onload = () => {
-                        qrImage.classList.remove('hidden');
-                        document.getElementById('qr-loading').classList.add('hidden');
-                    };
-                    qrImage.onerror = () => {
-                        showError('Failed to load QR code image');
-                        document.getElementById('qr-loading').classList.add('hidden');
-                    };
-                    qrImage.src = `${API_BASE}${data.qrImage}?t=${Date.now()}`; // Cache buster
-                    
-                    document.getElementById('session-id').textContent = data.sessionId;
-                    document.getElementById('session-info').classList.remove('hidden');
-                    
-                    currentSessionId = data.sessionId;
-                    updateExpiryTimer(data.expiresIn); // <<< MODIFIED: Pass full expiresIn (ms)
-                    
-                    // MODIFIED: Auto-refresh 10 seconds before expiry
-                    if (data.expiresIn > 10000) { // Ensure expiresIn is greater than 10s
-                        autoRefreshTimerId = setTimeout(() => {
-                            console.log("Auto-refreshing QR code due to impending expiry.");
-                            generateQR(); // This will call generateQR again
-                        }, data.expiresIn - 10000); // 10 seconds before expiry
-                    } else if (data.expiresIn > 0) { // If validity is too short (but >0), let it expire
-                         autoRefreshTimerId = setTimeout(() => {
-                            console.log("QR code expired (short validity). Will not auto-refresh this instance.");
-                            // The timer will handle display update to expired.
-                            // currentSessionId will be null, user can click button.
-                        }, data.expiresIn);
-                    }
+                const response = await axios.get(`${API_BASE}/api/academic/my-courses`, {
+                    params: {
+                        q: query,
+                        page: targetPage,
+                        limit: COURSE_PAGE_SIZE,
+                    },
+                });
 
-                } else {
-                    throw new Error(data.message || 'Invalid response from server');
+                if (activeRequestSeq !== requestId) {
+                    return;
                 }
-                
+
+                const rows = response?.data?.data || [];
+                const pagination = response?.data?.pagination || {};
+
+                if (append) {
+                    const knownIds = new Set(availableCourses.map((course) => course.id));
+                    const newRows = rows.filter((row) => !knownIds.has(row.id));
+                    availableCourses = [...availableCourses, ...newRows];
+                } else {
+                    availableCourses = rows;
+                }
+
+                coursePage = Number(pagination.page || targetPage);
+                hasNextCoursePage = Boolean(pagination.hasNext);
+                totalCourses = Number(pagination.total || availableCourses.length);
+                lastSearchQuery = query;
+
+                clearError();
+                renderCourseOptions();
             } catch (error) {
-                console.error("QR generation failed:", error);
-                showError(error.response?.data?.message || error.message || 'Failed to generate QR code');
-                document.getElementById('qr-loading').classList.add('hidden');
-                currentSessionId = null; // Ensure session is cleared on error
-            } finally {
-                generateBtn.disabled = false;
-                generateBtn.textContent = "Generate QR Code";
+                if (activeRequestSeq !== requestId) {
+                    return;
+                }
+                showError(error.response?.data?.message || "Failed to load courses");
+                availableCourses = [];
+                coursePage = 1;
+                hasNextCoursePage = false;
+                totalCourses = 0;
+                renderCourseOptions();
             }
         }
 
-        document.addEventListener("DOMContentLoaded", () => {
-            document.getElementById('generate-btn').addEventListener('click', generateQR);
-            generateQR(); // Generate initial QR code on page load
-            
-            // MODIFIED: Removed the generic setInterval for auto-refresh
-            // The new logic within generateQR is more precise.
+        function onSearchInput() {
+            const query = normalizeSearchText(document.getElementById("course-search")?.value);
+            if (searchDebounceId) {
+                clearTimeout(searchDebounceId);
+            }
+            searchDebounceId = setTimeout(() => {
+                loadCourses({ query, append: false });
+            }, 280);
+        }
+
+        async function loadMoreCourses() {
+            if (!hasNextCoursePage) return;
+            await loadCourses({ query: lastSearchQuery, append: true });
+        }
+
+        function goToQRPage() {
+            const courseSelect = document.getElementById("course-select");
+            const courseId = courseSelect ? courseSelect.value : "";
+            if (!courseId) {
+                showError("Please select a course first.");
+                return;
+            }
+
+            localStorage.setItem("lastSelectedCourseId", courseId);
+            window.location.href = `qr-session.html?courseId=${encodeURIComponent(courseId)}`;
+        }
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            const staffMeta = document.getElementById("staffMeta");
+            if (staffMeta && authUser) {
+                const institutionName = localStorage.getItem('activeInstitutionName') || authUser?.institution?.name || '';
+                staffMeta.textContent = institutionName
+                    ? `${authUser.name} (${authUser.role}) • ${institutionName}`
+                    : `${authUser.name} (${authUser.role})`;
+            }
+
+            const dashboardHref = getDataDashboardHrefByRole(authUser.role);
+            const viewDataHeaderLink = document.getElementById("viewDataHeaderLink");
+            if (viewDataHeaderLink) {
+                viewDataHeaderLink.href = dashboardHref;
+            }
+            const viewDataMainLink = document.getElementById("viewDataMainLink");
+            if (viewDataMainLink) {
+                viewDataMainLink.href = dashboardHref;
+            }
+
+            const logoutBtn = document.getElementById("logoutBtn");
+            if (logoutBtn) {
+                logoutBtn.addEventListener("click", () => {
+                    localStorage.removeItem("authToken");
+                    localStorage.removeItem("authUser");
+                    localStorage.removeItem("adminToken");
+                    localStorage.removeItem("lastSelectedCourseId");
+                    localStorage.removeItem("activeInstitutionId");
+                    localStorage.removeItem("activeInstitutionName");
+                    window.location.href = "login.html";
+                });
+            }
+
+            const courseSearch = document.getElementById("course-search");
+            if (courseSearch) {
+                courseSearch.addEventListener("input", onSearchInput);
+                courseSearch.addEventListener("keydown", (event) => {
+                    if (event.key === "Enter") {
+                        event.preventDefault();
+                        goToQRPage();
+                    }
+                });
+            }
+
+            const continueBtn = document.getElementById("continue-btn");
+            if (continueBtn) {
+                continueBtn.addEventListener("click", goToQRPage);
+            }
+
+            const loadMoreCoursesBtn = document.getElementById("load-more-courses");
+            if (loadMoreCoursesBtn) {
+                loadMoreCoursesBtn.addEventListener("click", loadMoreCourses);
+            }
+
+            await loadCourses({ query: "", append: false });
         });
     </script>
 </body>

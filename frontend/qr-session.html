@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course QR Session</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center">
+        <div class="relative mb-1 min-h-[44px]">
+            <button id="changeCourseBtn" class="absolute left-0 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-9 h-9 rounded-full border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors" title="Change Course" aria-label="Change Course">
+                <span aria-hidden="true" class="text-lg leading-none">←</span>
+            </button>
+            <div id="institutionBrand" class="flex items-center justify-center w-full">
+                <img id="institutionLogo" src="" alt="Institution Logo" class="h-24 max-w-[300px] object-contain hidden">
+                <h1 id="institutionBrandFallback" class="text-2xl font-bold">Staff QR Generator</h1>
+            </div>
+        </div>
+        <p id="staffMeta" class="text-xs text-gray-500 mt-1"></p>
+        <p id="selectedCourseMeta" class="text-sm text-gray-700 mt-3 mb-4"></p>
+
+        <div class="flex justify-center mb-6">
+            <div id="qr-container" class="relative">
+                <img id="qr-image" src="" alt="QR Code" class="w-64 h-64 border-4 border-blue-500 rounded-lg hidden">
+                <div id="qr-loading" class="absolute inset-0 flex items-center justify-center hidden">
+                    <div class="spinner rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="error-message" class="text-red-500 mb-4 min-h-6"></div>
+
+        <div id="session-info" class="text-sm text-gray-600 mb-4 hidden">
+            Session ID: <span id="session-id" class="font-mono"></span><br>
+            Expires in: <span id="expiry-time"></span><br>
+            Course: <span id="course-label" class="font-semibold"></span>
+        </div>
+
+        <button id="generate-btn" class="bg-blue-600 text-white py-2 px-6 rounded hover:bg-blue-700 transition-colors">
+            Generate / Refresh QR
+        </button>
+    </div>
+
+    <script>
+        const API_BASE =
+            (window.location.origin && window.location.origin !== "null")
+                ? window.location.origin
+                : "http://127.0.0.1:5001";
+
+        const authToken = localStorage.getItem("authToken");
+        const authUserRaw = localStorage.getItem("authUser");
+        const authUser = authUserRaw ? JSON.parse(authUserRaw) : null;
+        const allowedRoles = ["teacher"];
+
+        if (!authToken || !authUser || !allowedRoles.includes(authUser.role)) {
+            window.location.href = "login.html";
+        }
+
+        axios.defaults.headers.common.Authorization = `Bearer ${authToken}`;
+        axios.interceptors.request.use((config) => {
+            const scopedInstitutionId = localStorage.getItem('activeInstitutionId') || authUser?.institutionId || '';
+            if (scopedInstitutionId) {
+                config.headers['X-Institution-Id'] = scopedInstitutionId;
+            }
+            return config;
+        });
+        axios.interceptors.response.use(
+            (response) => response,
+            (error) => {
+                const status = error?.response?.status;
+                if (status === 401 || status === 403) {
+                    localStorage.removeItem("authToken");
+                    localStorage.removeItem("authUser");
+                    localStorage.removeItem("adminToken");
+                    localStorage.removeItem("lastSelectedCourseId");
+                    localStorage.removeItem("activeInstitutionId");
+                    localStorage.removeItem("activeInstitutionName");
+                    window.location.href = "login.html";
+                }
+                return Promise.reject(error);
+            }
+        );
+
+        const DAY_LABELS = {
+            MON: "Mon",
+            TUE: "Tue",
+            WED: "Wed",
+            THU: "Thu",
+            FRI: "Fri",
+            SAT: "Sat",
+            SUN: "Sun"
+        };
+
+        const query = new URLSearchParams(window.location.search);
+        let selectedCourseId = query.get("courseId") || localStorage.getItem("lastSelectedCourseId") || "";
+
+        let selectedCourse = null;
+        let expiryInterval = null;
+        let autoRefreshTimerId = null;
+
+        function showError(message) {
+            const errorElement = document.getElementById("error-message");
+            if (errorElement) errorElement.textContent = message;
+        }
+
+        function clearError() {
+            const errorElement = document.getElementById("error-message");
+            if (errorElement) errorElement.textContent = "";
+        }
+
+        function formatCourseDays(daysOfWeek) {
+            if (!Array.isArray(daysOfWeek) || !daysOfWeek.length) return "";
+            return daysOfWeek.map((day) => DAY_LABELS[day] || day).join("/");
+        }
+
+        function formatCourseSchedule(course) {
+            const days = formatCourseDays(course.daysOfWeek);
+            if (!days || !course.startTime || !course.endTime) {
+                return "No schedule";
+            }
+            return `${days} ${course.startTime}-${course.endTime}`;
+        }
+
+        function renderSelectedCourse() {
+            const selectedCourseMeta = document.getElementById("selectedCourseMeta");
+            if (!selectedCourseMeta) return;
+
+            if (!selectedCourse) {
+                selectedCourseMeta.textContent = "Course not selected";
+                return;
+            }
+
+            selectedCourseMeta.textContent = `${selectedCourse.code} - ${selectedCourse.name} (Section ${selectedCourse.section}) | ${formatCourseSchedule(selectedCourse)}`;
+        }
+
+        function resolveAssetUrl(rawUrl) {
+            const value = String(rawUrl || "").trim();
+            if (!value) return "";
+            if (/^(https?:)?\/\//i.test(value) || value.startsWith("data:") || value.startsWith("blob:")) {
+                return value;
+            }
+            if (value.startsWith("/")) {
+                return `${API_BASE}${value}`;
+            }
+            return `${API_BASE}/${value}`;
+        }
+
+        function setInstitutionBrand({ logoUrl = "", institutionName = "" } = {}) {
+            const logoEl = document.getElementById("institutionLogo");
+            const fallbackEl = document.getElementById("institutionBrandFallback");
+            if (!logoEl || !fallbackEl) return;
+
+            const resolvedLogo = resolveAssetUrl(logoUrl);
+            if (!resolvedLogo) {
+                logoEl.style.transform = "";
+                logoEl.classList.add("hidden");
+                fallbackEl.classList.remove("hidden");
+                return;
+            }
+
+            logoEl.onload = () => {
+                // Optical centering: some logos have asymmetric visual weight.
+                logoEl.style.transform = "translateX(-6px)";
+                logoEl.classList.remove("hidden");
+                fallbackEl.classList.add("hidden");
+            };
+            logoEl.onerror = () => {
+                logoEl.style.transform = "";
+                logoEl.classList.add("hidden");
+                fallbackEl.classList.remove("hidden");
+            };
+            logoEl.src = resolvedLogo;
+            logoEl.alt = institutionName ? `${institutionName} logo` : "Institution Logo";
+        }
+
+        async function loadInstitutionBrand() {
+            const fromAuthLogo = authUser?.institution?.logoUrl || "";
+            const fromAuthName = authUser?.institution?.name || "";
+            const fromStorageName = localStorage.getItem("activeInstitutionName") || "";
+            const institutionId = localStorage.getItem("activeInstitutionId") || authUser?.institutionId || "";
+
+            if (fromAuthLogo) {
+                setInstitutionBrand({
+                    logoUrl: fromAuthLogo,
+                    institutionName: fromStorageName || fromAuthName
+                });
+                return;
+            }
+
+            if (!institutionId) {
+                setInstitutionBrand({
+                    logoUrl: "",
+                    institutionName: fromStorageName || fromAuthName
+                });
+                return;
+            }
+
+            try {
+                const response = await axios.get(`${API_BASE}/api/auth/institutions`, {
+                    params: { active: "true" }
+                });
+                const rows = response?.data?.data || [];
+                const institution = rows.find((row) => row.id === institutionId) || rows[0] || null;
+                if (institution?.name) {
+                    localStorage.setItem("activeInstitutionName", institution.name);
+                }
+                setInstitutionBrand({
+                    logoUrl: institution?.logoUrl || "",
+                    institutionName: institution?.name || fromStorageName || fromAuthName
+                });
+            } catch (_) {
+                setInstitutionBrand({
+                    logoUrl: "",
+                    institutionName: fromStorageName || fromAuthName
+                });
+            }
+        }
+
+        function updateExpiryTimer(expiresInMs) {
+            clearInterval(expiryInterval);
+
+            let remainingTimeMs = expiresInMs;
+            const expiryTimeEl = document.getElementById("expiry-time");
+
+            const updateDisplay = () => {
+                if (!expiryTimeEl) return;
+
+                if (remainingTimeMs <= 0) {
+                    clearInterval(expiryInterval);
+                    expiryTimeEl.textContent = "0m 0s - Expired";
+                    document.getElementById("qr-image")?.classList.add("hidden");
+                    showError("QR code has expired. Please refresh.");
+                    return;
+                }
+
+                const minutes = Math.floor(remainingTimeMs / 60000);
+                const seconds = Math.floor((remainingTimeMs % 60000) / 1000);
+                expiryTimeEl.textContent = `${minutes}m ${seconds}s`;
+            };
+
+            updateDisplay();
+            expiryInterval = setInterval(() => {
+                remainingTimeMs -= 1000;
+                updateDisplay();
+            }, 1000);
+        }
+
+        async function loadSelectedCourse() {
+            if (!selectedCourseId) {
+                window.location.href = "qr-scanner.html";
+                return false;
+            }
+
+            try {
+                let page = 1;
+                let hasNext = true;
+                selectedCourse = null;
+
+                while (hasNext && page <= 30 && !selectedCourse) {
+                    const response = await axios.get(`${API_BASE}/api/academic/my-courses`, {
+                        params: { page, limit: 100 }
+                    });
+                    const myCourses = response?.data?.data || [];
+                    const pagination = response?.data?.pagination || {};
+                    selectedCourse = myCourses.find((course) => course.id === selectedCourseId) || null;
+                    hasNext = Boolean(pagination.hasNext);
+                    page += 1;
+                    if (!myCourses.length) break;
+                }
+
+                if (!selectedCourse) {
+                    showError("Selected course is not assigned to this user anymore.");
+                    document.getElementById("generate-btn").disabled = true;
+                    return false;
+                }
+
+                clearError();
+                document.getElementById("generate-btn").disabled = false;
+                localStorage.setItem("lastSelectedCourseId", selectedCourseId);
+                renderSelectedCourse();
+                return true;
+            } catch (error) {
+                showError(error.response?.data?.message || "Failed to load selected course");
+                document.getElementById("generate-btn").disabled = true;
+                return false;
+            }
+        }
+
+        async function generateQR() {
+            if (!selectedCourseId) {
+                showError("Please select a course first.");
+                return;
+            }
+
+            const generateBtn = document.getElementById("generate-btn");
+            if (!generateBtn) return;
+
+            if (autoRefreshTimerId) {
+                clearTimeout(autoRefreshTimerId);
+                autoRefreshTimerId = null;
+            }
+
+            clearError();
+            generateBtn.disabled = true;
+            generateBtn.textContent = "Generating...";
+            document.getElementById("qr-image")?.classList.add("hidden");
+            document.getElementById("qr-loading")?.classList.remove("hidden");
+            document.getElementById("session-info")?.classList.add("hidden");
+
+            try {
+                const response = await axios.get(`${API_BASE}/api/generate-qr`, {
+                    params: { courseId: selectedCourseId }
+                });
+
+                const data = response.data;
+                if (data.status !== "success" || !data.qrImage || !data.sessionId || typeof data.expiresIn !== "number") {
+                    throw new Error(data.message || "Invalid response from server");
+                }
+
+                const qrImage = document.getElementById("qr-image");
+                if (qrImage) {
+                    qrImage.onload = () => {
+                        qrImage.classList.remove("hidden");
+                        document.getElementById("qr-loading")?.classList.add("hidden");
+                    };
+                    qrImage.onerror = () => {
+                        showError("Failed to load QR code image");
+                        document.getElementById("qr-loading")?.classList.add("hidden");
+                    };
+                    qrImage.src = `${API_BASE}${data.qrImage}?t=${Date.now()}`;
+                }
+
+                const sessionIdEl = document.getElementById("session-id");
+                if (sessionIdEl) sessionIdEl.textContent = data.sessionId;
+
+                const courseLabelEl = document.getElementById("course-label");
+                if (courseLabelEl) {
+                    const code = data.sessionContext?.courseCode || selectedCourse?.code || "";
+                    const name = data.sessionContext?.courseName || selectedCourse?.name || "";
+                    const section = data.sessionContext?.section || selectedCourse?.section || "";
+                    courseLabelEl.textContent = `${code} ${name} (Section ${section})`.trim();
+                }
+
+                document.getElementById("session-info")?.classList.remove("hidden");
+                updateExpiryTimer(data.expiresIn);
+
+                if (data.expiresIn > 10000) {
+                    autoRefreshTimerId = setTimeout(() => {
+                        generateQR();
+                    }, data.expiresIn - 10000);
+                }
+            } catch (error) {
+                showError(error.response?.data?.message || error.message || "Failed to generate QR code");
+                document.getElementById("qr-loading")?.classList.add("hidden");
+            } finally {
+                generateBtn.disabled = false;
+                generateBtn.textContent = "Generate / Refresh QR";
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", async () => {
+            await loadInstitutionBrand();
+
+            const staffMeta = document.getElementById("staffMeta");
+            if (staffMeta && authUser) {
+                const institutionName = localStorage.getItem('activeInstitutionName') || authUser?.institution?.name || '';
+                staffMeta.textContent = institutionName
+                    ? `${authUser.name} (${authUser.role}) • ${institutionName}`
+                    : `${authUser.name} (${authUser.role})`;
+            }
+
+            const changeCourseBtn = document.getElementById("changeCourseBtn");
+            if (changeCourseBtn) {
+                changeCourseBtn.addEventListener("click", () => {
+                    window.location.href = "qr-scanner.html";
+                });
+            }
+
+            const generateBtn = document.getElementById("generate-btn");
+            if (generateBtn) {
+                generateBtn.addEventListener("click", generateQR);
+            }
+
+            const ready = await loadSelectedCourse();
+            if (ready) {
+                await generateQR();
+            }
+        });
+    </script>
+</body>
+</html>

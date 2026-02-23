@@ -59,7 +59,7 @@
   }
 
   try {
-    const API_BASE = 'http://localhost:5000'; // Your backend URL
+    const API_BASE = window.location.origin;
     const response = await fetch(`${API_BASE}/api/students/profile?rollNo=${encodeURIComponent(rollNo)}`);
     
     // Check if response is OK first
