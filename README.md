@@ -135,12 +135,6 @@ You can extend the system with a dashboard page (`dashboard.html`) to visualize:
 
 ---
 
-## 🤝 Contributing
-
-Pull requests are welcome! For major changes, open an issue first to discuss what you’d like to improve.
-
----
-
 ## 📃 License
 
 This project is open source and available under the [MIT License](LICENSE).
@@ -149,9 +143,7 @@ This project is open source and available under the [MIT License](LICENSE).
 
 ## 👩‍💻 Author
 
-**Vaishnavi Khandelwal**
-B.Tech CSE Student | QR Attendance System Developer
-
+Enigma Developers
 ---
 
 ## 📌 Academic Relevance
