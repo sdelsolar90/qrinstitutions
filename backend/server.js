@@ -120,7 +120,10 @@ app.use(
 
 app.use(cors());
 app.use(express.json({ limit: "6mb" }));
-app.use(express.static(path.join(__dirname, '../frontend')));
+app.use(express.static(path.join(__dirname, '../frontend'), { index: false }));
+app.get("/", (req, res) => {
+  return res.status(404).type("text/plain").send("Not Found");
+});
 
 // Request logging
 app.use((req, res, next) => {

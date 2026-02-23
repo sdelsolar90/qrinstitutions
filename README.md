@@ -1,157 +1,226 @@
-# 📸 QR-Based Attendance System 🧑‍🎓
+# QR Institutions Attendance System
 
-A secure, geolocation-verified student attendance management system using **QR codes**, **device fingerprinting**, and **real-time GPS validation**. Built using **Node.js**, **MongoDB**, and **Tailwind CSS** for modern web-based attendance tracking.
+Multi-institution attendance platform with:
+- role-based staff access,
+- academic structure (program -> version -> course -> section),
+- teacher QR sessions,
+- student attendance capture,
+- per-course security policies for in-person and online classes.
 
----
+Built with Node.js, Express, MongoDB, and Tailwind-based frontend pages.
 
-## 🚀 Features
+## What Is Implemented
 
-- ✅ Secure QR Code Generation (valid for 15 minutes)
-- 📍 Geofencing: Marks attendance only if within 100 meters of class
-- 🧠 Device Fingerprinting to prevent multiple entries
-- 📅 Attendance Dashboard with analytics
-- 🛡 Rate-limited QR generation to prevent abuse
-- 🎨 Clean, responsive UI with Tailwind CSS
-- 🧾 MongoDB-based persistent storage
+- Authentication and bootstrap:
+  - First-run superadmin creation.
+  - Login with JWT-based auth.
+  - Role-based access control.
+- Multi-institution layer:
+  - Institutions CRUD.
+  - Institution branding/logo support.
+  - Institution-scoped data access.
+- Academic module:
+  - Programs and program versions.
+  - Courses with schedule metadata.
+  - Teacher-course assignment.
+  - Enrollment roster per course.
+- Teacher flow:
+  - Course selector with search.
+  - QR generation per selected course.
+  - Teacher attendance dashboard.
+- Student flow:
+  - Scan QR.
+  - Submit attendance with full name + email.
+  - Optional signature (policy-driven).
+  - Optional geolocation (policy-driven).
+- Security enforcement at attendance time:
+  - One attendance per student per course/day.
+  - Optional one-device-per-course/day.
+  - Optional enrollment requirement.
+  - Optional IP allowlist (supports IPv4 and CIDR).
+  - Optional geofence (lat/lng/radius).
 
----
+## Roles
 
-## 📂 Project Structure
+Supported roles:
+- `superadmin`
+- `admin`
+- `institution_admin`
+- `institution_user`
+- `teacher`
 
+High-level behavior:
+- `teacher` is redirected to QR course selection.
+- Other staff roles are redirected to admin dashboard.
+
+## Course Delivery Modes and Policies
+
+Each course supports:
+- `deliveryMode`: `in_person` | `online` | `hybrid`
+- `attendancePolicy`:
+  - `singleDevicePerDay` (default: `true`)
+  - `requireSignature` (default: `true`)
+  - `requireEnrollment` (default from env `ATTENDANCE_REQUIRE_ENROLLMENT`)
+  - `requireIpAllowlist` (default: `false`)
+  - `ipAllowlist` (array of IP/CIDR)
+  - `requireGeofence` (default: `false`)
+  - `geofence.lat`
+  - `geofence.lng`
+  - `geofence.radiusMeters`
+
+Recommended policy examples:
+- In-person:
+  - `requireGeofence=true`
+  - `requireIpAllowlist=true` (campus ranges)
+  - `singleDevicePerDay=true`
+- Online:
+  - `requireGeofence=false`
+  - `requireIpAllowlist=false` (or stricter if needed)
+  - `singleDevicePerDay=true`
+
+## Main Pages
+
+- Login: `http://localhost:5001/login.html`
+- Admin dashboard: `http://localhost:5001/admin-dashboard.html`
+- Teacher course select: `http://localhost:5001/qr-scanner.html`
+- Teacher QR session: `http://localhost:5001/qr-session.html`
+- Student attendance page (via QR): `http://localhost:5001/index.html?sessionId=...`
+- Student dashboard: `http://localhost:5001/dashboard.html?rollNo=<email>`
+
+## Quick Start (Docker Recommended)
+
+### Prerequisites
+
+- Docker Desktop
+- Docker Compose
+
+### Run
+
+```bash
+git clone https://github.com/sdelsolar90/qrinstitutions.git
+cd qrinstitutions
+docker compose up -d --build
 ```
 
-📦 qr-attendance-system/
-├── backend/
-│   ├── server.js
-│   ├── qr-generator.js
-│   ├── models/
-│   └── routes/
-├── frontend/
-│   ├── index.html
-│   ├── qr-scanner.html
-│   ├── script.js
-│   └── styles/
-└── README.md
+Open:
+- `http://localhost:5001/login.html`
 
-````
+Health check:
 
----
+```bash
+curl -sS http://127.0.0.1:5001/health
+```
 
-## 🛠 Tech Stack
+Stop:
 
-| Layer       | Tech/Library                        |
-|-------------|-------------------------------------|
-| Frontend    | HTML, TailwindCSS, JavaScript       |
-| Backend     | Node.js, Express.js                 |
-| Database    | MongoDB (via Mongoose)              |
-| Security    | Helmet.js, SHA-256 (crypto), CORS   |
-| Features    | QR Code (`qrcode`), Geo Validation  |
-| Extras      | Device FingerprintJS, Haversine Algo|
+```bash
+docker compose down
+```
 
----
+## First Run Bootstrap
 
-## 🔐 Core Algorithms
+When there are no auth users:
+- `login.html` automatically switches to "Create Superadmin" mode.
+- It calls:
+  - `GET /api/auth/bootstrap-status`
+  - `POST /api/auth/bootstrap-superadmin`
 
-- **Haversine Formula** – Validates student is within campus radius
-- **SHA-256 Hashing** – Signs QR code session payload
-- **Canvas Fingerprinting** – Tracks device identity
-- **Rate Limiting** – Protects QR endpoint (max 5/minute/IP)
-- **Session Validation** – Ensures QR isn't reused or expired
+After bootstrap, normal login uses:
+- `POST /api/auth/login`
 
----
+## Run Without Docker
 
-## 📸 How It Works
+### Prerequisites
 
-1. Admin generates a time-limited QR code via `/qr-scanner.html`
-2. Student scans the QR → redirected to `/index.html?sessionId=...`
-3. System captures:
-   - GPS coordinates
-   - Device fingerprint
-   - Student details
-4. Backend checks:
-   - If student is near classroom
-   - If attendance already marked today
-   - If QR session is valid
-5. Attendance is stored and can be viewed from the dashboard.
+- Node.js 20+
+- MongoDB 7+
+- Java runtime (OpenJDK 17+) for Java-backed helpers/fallback paths used in backend
 
----
+### Backend
 
-## 📦 Setup Instructions
+```bash
+cd backend
+npm install
+```
 
-### 🖥 Prerequisites
-
-- Node.js & npm
-- MongoDB (local or Atlas)
-- `.env` file with the following:
+Create `backend/.env`:
 
 ```env
 PORT=5000
-MONGO_URI=mongodb://localhost:27017/attendance
-QR_SECRET_KEY=supersecret123
-````
+MONGO_URI=mongodb://127.0.0.1:27017/attendance
+QR_SECRET_KEY=change-me
+APP_BASE_URL=http://localhost:5001
+QR_CODE_DIR=../frontend/public/qrcodes
+INSTITUTION_LOGO_DIR=../frontend/public/institution-logos
+NODE_ENV=development
+ATTENDANCE_REQUIRE_ENROLLMENT=true
+```
 
----
-
-### 📁 Installation
+Run backend:
 
 ```bash
-# Clone the repo
-git clone https://github.com/yourusername/qr-based-attendance-system.git
-cd qr-based-attendance-system
-
-# Install dependencies
-npm install
-
-# Start the backend server
 node server.js
 ```
 
----
+Serve frontend from same server (already configured by Express static middleware) and open:
+- `http://localhost:5000/login.html`
 
-### 🌐 Frontend Access
+## Project Structure
 
-Open these in your browser:
+```text
+QR-Based-Attendance-System/
+├── backend/
+│   ├── middleware/
+│   ├── models/
+│   ├── routes/
+│   ├── qr-generator.js
+│   └── server.js
+├── frontend/
+│   ├── login.html
+│   ├── admin-dashboard.html
+│   ├── course-editor.html
+│   ├── assignment-manager.html
+│   ├── staff-editor.html
+│   ├── staff-view.html
+│   ├── qr-scanner.html
+│   ├── qr-session.html
+│   ├── teacher-dashboard.html
+│   ├── index.html
+│   └── script.js
+├── docker-compose.yml
+├── Dockerfile
+└── README.md
+```
 
-* `http://localhost:5000/qr-scanner.html` → Generate QR code
-* `http://localhost:5000/index.html?sessionId=...` → Mark attendance
+## Key API Areas
 
----
+- Auth and institutions:
+  - `/api/auth/*`
+- Academic:
+  - `/api/academic/programs`
+  - `/api/academic/courses`
+  - `/api/academic/courses/:courseId`
+  - `/api/academic/teachers`
+  - `/api/academic/assignments`
+  - `/api/academic/courses/:courseId/enrollments`
+- Attendance:
+  - `POST /mark-attendance`
+  - `POST /api/validate-session`
+  - `GET /api/attendance*`
 
-## 📊 Dashboard (Optional)
+## Notes for Production
 
-You can extend the system with a dashboard page (`dashboard.html`) to visualize:
+- Set a strong `QR_SECRET_KEY`.
+- Put the app behind a reverse proxy and forward real client IP headers.
+- Configure trusted campus CIDR blocks carefully when using IP allowlist.
+- Keep logo storage and MongoDB storage in persistent volumes.
+- Add proper backups and monitoring for MongoDB.
 
-* Attendance %
-* Dates present
-* Department vs student average
+## Author
 
----
+Enigma Developers.
 
-## 🧪 Testing Tips
+## License
 
-* Spoof location with browser dev tools
-* Use different devices or browsers to check fingerprint tracking
-* Try scanning expired QR to validate session handling
-
----
-
-## 📃 License
-
-This project is open source and available under the [MIT License](LICENSE).
-
----
-
-## 👩‍💻 Author
-
-Enigma Developers
----
-
-## 📌 Academic Relevance
-
-This project is part of a DAA-based PBL focusing on:
-
-* Secure Hashing (SHA-256)
-* Haversine Formula (spatial validation)
-* Algorithm optimization (QR reuse prevention, rate limiting)
-
----
+Proprietary software. All rights reserved.
+This project is not open source and may not be used, copied, modified, or distributed without explicit written permission.
