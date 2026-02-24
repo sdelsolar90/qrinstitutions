@@ -60,7 +60,7 @@ requiredEnvVars.forEach(envVar => {
 });
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 // Configuration Constants
 const ATTENDANCE_REQUIRE_ENROLLMENT = process.env.ATTENDANCE_REQUIRE_ENROLLMENT !== "false";
