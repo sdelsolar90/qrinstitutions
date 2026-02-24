@@ -112,7 +112,8 @@ app.use(
           "data:",
           "https://ui-avatars.com",
           "https:"
-        ]
+        ],
+        "script-src-attr": ["'unsafe-inline'"]
       }
     }
   })
