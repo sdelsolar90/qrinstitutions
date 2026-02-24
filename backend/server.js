@@ -60,6 +60,7 @@ requiredEnvVars.forEach(envVar => {
 });
 
 const app = express();
+app.set('trust proxy', true);
 
 // Configuration Constants
 const ATTENDANCE_REQUIRE_ENROLLMENT = process.env.ATTENDANCE_REQUIRE_ENROLLMENT !== "false";
@@ -559,6 +560,7 @@ app.get("/api/generate-qr", requireAuth, requireRoles("teacher"), qrLimiter, asy
     }
 
     console.log(`Generating QR code for IP: ${req.ip} course=${course.code}-${course.section}`);
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
     const qrData = await generateQRCode(req.ip, {
       generatedBy: String(req.authUser._id),
       generatedByRole: req.authUser.role,
@@ -568,7 +570,7 @@ app.get("/api/generate-qr", requireAuth, requireRoles("teacher"), qrLimiter, asy
       courseCode: course.code,
       courseName: course.name,
       section: course.section
-    });
+    }, baseUrl);
     
     console.log(` Generated QR code at: ${qrData.qrImage}`);
     res.json({

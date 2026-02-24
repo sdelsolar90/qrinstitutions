@@ -7,7 +7,7 @@ const crypto = require('crypto');
 const QR_CODE_VALIDITY = 1.5 * 60 * 1000; // 1.5 minutes in ms
 const QR_CODE_DIR = process.env.QR_CODE_DIR || path.join(__dirname, '../frontend/public/qrcodes');
 const CACHE_TIME = 90000; // 90 seconds (1.5 minutes), corrected comment
-const APP_BASE_URL = (process.env.APP_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
+const APP_BASE_URL_FALLBACK = (process.env.APP_BASE_URL || 'http://localhost:5000').replace(/\/$/, '');
 
 // Track active sessions and IP cache
 const activeSessions = new Map();
@@ -18,18 +18,19 @@ if (!fs.existsSync(QR_CODE_DIR)) {
     fs.mkdirSync(QR_CODE_DIR, { recursive: true });
 }
 
-function makeCacheKey(ipAddress, sessionContext = {}) {
+function makeCacheKey(ipAddress, sessionContext = {}, baseUrl = '') {
     return [
         ipAddress || '',
         sessionContext.institutionId || '',
         sessionContext.generatedBy || '',
         sessionContext.courseId || '',
-        sessionContext.section || ''
+        sessionContext.section || '',
+        baseUrl || ''
     ].join('|');
 }
 
-async function generateQRCode(ipAddress, sessionContext = {}) {
-    const cacheKey = makeCacheKey(ipAddress, sessionContext);
+async function generateQRCode(ipAddress, sessionContext = {}, baseUrl = '') {
+    const cacheKey = makeCacheKey(ipAddress, sessionContext, baseUrl);
 
     // Check cache first
     if (ipCache.has(cacheKey)) {
@@ -48,7 +49,8 @@ async function generateQRCode(ipAddress, sessionContext = {}) {
                          .update(sessionId + timestamp + secretKey)
                          .digest('hex');
 
-        const qrData = `${APP_BASE_URL}/verify-attendance?data=${encodeURIComponent(JSON.stringify({
+        const resolvedBase = (baseUrl || APP_BASE_URL_FALLBACK).replace(/\/$/, '');
+        const qrData = `${resolvedBase}/verify-attendance?data=${encodeURIComponent(JSON.stringify({
             sessionId,
             timestamp,
             hash
