@@ -1,7 +1,13 @@
 const mongoose = require("mongoose");
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
 function normalizeUpper(value) {
   return String(value || "").trim().toUpperCase();
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 const courseEnrollmentSchema = new mongoose.Schema(
@@ -23,6 +29,18 @@ const courseEnrollmentSchema = new mongoose.Schema(
       required: true,
       trim: true,
       set: normalizeUpper,
+    },
+    email: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+      validate: {
+        validator: (value) => EMAIL_PATTERN.test(String(value || "")),
+        message: "Invalid email format",
+      },
+      set: normalizeEmail,
+      index: true,
     },
     fullName: {
       type: String,
@@ -81,6 +99,21 @@ courseEnrollmentSchema.index(
 courseEnrollmentSchema.index(
   { institutionId: 1, universityRollNo: 1 },
   { name: "institution_enrollment_rollno_idx" }
+);
+courseEnrollmentSchema.index(
+  { institutionId: 1, courseId: 1, email: 1 },
+  {
+    unique: true,
+    name: "institution_course_email_unique_idx",
+    partialFilterExpression: { email: { $type: "string", $ne: "" } },
+  }
+);
+courseEnrollmentSchema.index(
+  { institutionId: 1, email: 1 },
+  {
+    name: "institution_email_idx",
+    partialFilterExpression: { email: { $type: "string", $ne: "" } },
+  }
 );
 
 module.exports = mongoose.model("CourseEnrollment", courseEnrollmentSchema);

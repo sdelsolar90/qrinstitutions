@@ -1137,13 +1137,14 @@ app.post('/mark-attendance', validateAttendance, async (req, res) => {
       ? crypto.createHash('sha256').update(normalizedSignatureDataUrl.split(',')[1]).digest('hex')
       : null;
 
+    const normalizedSubmittedEmail = submittedEmail.trim().toLowerCase();
     const nameRegex = new RegExp(`^${escapeRegex(submittedName)}$`, 'i');
     const enrollment = await CourseEnrollment.findOne({
       institutionId,
       courseId: sessionDetails.courseId,
       isActive: true,
       $or: [
-        { universityRollNo: submittedEmail },
+        { email: normalizedSubmittedEmail },
         { universityRollNo: submittedEmail.toUpperCase() },
         { fullName: nameRegex },
       ],
@@ -1163,7 +1164,7 @@ app.post('/mark-attendance', validateAttendance, async (req, res) => {
       });
     }
 
-    const canonicalStudentId = submittedEmail;
+    const canonicalStudentId = normalizedSubmittedEmail;
     const canonicalName = enrollment?.fullName || submittedName;
     const canonicalSection = enrollment?.section || normalizeUpper(course.section || sessionDetails.section || '') || 'N/A';
     const canonicalClassRollNo = enrollment?.classRollNo || 'N/A';
@@ -1194,8 +1195,12 @@ app.post('/mark-attendance', validateAttendance, async (req, res) => {
       });
     }
 
+    const studentMatch = {
+      institutionId,
+      $or: [{ universityRollNo: canonicalStudentId }, { email: canonicalStudentId }],
+    };
     const student = await User.findOneAndUpdate(
-      { institutionId, universityRollNo: canonicalStudentId },
+      studentMatch,
       {
         $set: {
           name: canonicalName,
@@ -1633,6 +1638,8 @@ async function ensureIndexes() {
   await dropIndexIfExists(CourseEnrollment, "course_enrollment_unique_idx");
   await dropIndexIfExists(CourseEnrollment, "course_section_classroll_idx");
   await dropIndexIfExists(CourseEnrollment, "enrollment_rollno_idx");
+  await dropIndexIfExists(CourseEnrollment, "institution_course_email_unique_idx");
+  await dropIndexIfExists(CourseEnrollment, "institution_email_idx");
   await dropIndexIfExists(StudentProfile, "student_rollno_profile_idx");
   await dropIndexIfExists(StudentProfile, "universityRollNo_1");
   await dropIndexIfExists(User, "universityRollNo_1");
@@ -1670,6 +1677,17 @@ async function ensureIndexes() {
     { key: { institutionId: 1, courseId: 1, universityRollNo: 1 }, name: "institution_course_enrollment_unique_idx", unique: true },
     { key: { institutionId: 1, courseId: 1, section: 1, classRollNo: 1 }, name: "institution_course_section_classroll_idx" },
     { key: { institutionId: 1, universityRollNo: 1 }, name: "institution_enrollment_rollno_idx" },
+    {
+      key: { institutionId: 1, courseId: 1, email: 1 },
+      name: "institution_course_email_unique_idx",
+      unique: true,
+      partialFilterExpression: { email: { $type: "string", $ne: "" } },
+    },
+    {
+      key: { institutionId: 1, email: 1 },
+      name: "institution_email_idx",
+      partialFilterExpression: { email: { $type: "string", $ne: "" } },
+    },
   ]);
 }
 

@@ -17,6 +17,7 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ENROLLMENT_ROLL_PATTERN = /^[A-Z0-9-]{3,30}$/;
 const COURSE_DELIVERY_MODES = new Set(["in_person", "online", "hybrid"]);
 const DEFAULT_REQUIRE_ENROLLMENT = process.env.ATTENDANCE_REQUIRE_ENROLLMENT !== "false";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
 function isInstitutionAdminRole(role) {
   return role === "institution_admin";
@@ -38,6 +39,10 @@ function canUseAllInstitutionsScope(req) {
 
 function normalizeUpper(value) {
   return String(value || "").trim().toUpperCase();
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function normalizeName(value) {
@@ -381,6 +386,7 @@ function mapEnrollment(enrollment) {
     institutionId: enrollment.institutionId ? String(enrollment.institutionId) : null,
     courseId: String(enrollment.courseId),
     universityRollNo: enrollment.universityRollNo,
+    email: enrollment.email,
     fullName: enrollment.fullName,
     section: enrollment.section,
     classRollNo: enrollment.classRollNo,
@@ -422,6 +428,7 @@ function normalizeEnrollmentRow(row) {
   const fullName = normalizeName(row.fullName);
   const section = normalizeUpper(row.section);
   const classRollNo = normalizeUpper(row.classRollNo);
+  const email = normalizeEmail(row.email);
 
   if (!ENROLLMENT_ROLL_PATTERN.test(universityRollNo)) {
     return { error: "Invalid universityRollNo format" };
@@ -435,12 +442,16 @@ function normalizeEnrollmentRow(row) {
   if (!classRollNo) {
     return { error: "classRollNo is required" };
   }
+  if (!EMAIL_PATTERN.test(email)) {
+    return { error: "Valid email is required" };
+  }
 
   return {
     universityRollNo,
     fullName,
     section,
     classRollNo,
+    email,
   };
 }
 
@@ -1420,13 +1431,23 @@ router.post(
         });
       }
 
+      const identifierCondition = {
+        institutionId,
+        courseId,
+        $or: [
+          { email: normalized.email },
+          { universityRollNo: normalized.universityRollNo },
+        ],
+      };
+
       const enrollment = await CourseEnrollment.findOneAndUpdate(
-        { institutionId, courseId, universityRollNo: normalized.universityRollNo },
+        identifierCondition,
         {
           $set: {
             fullName: normalized.fullName,
             section: normalized.section,
             classRollNo: normalized.classRollNo,
+            email: normalized.email,
             isActive: req.body.isActive !== false,
             updatedBy: req.authUser._id,
           },
@@ -1517,21 +1538,26 @@ router.post(
         });
       }
 
-      const uniqueByRollNo = new Map();
+      const uniqueByEmail = new Map();
       normalizedRows.forEach((row) => {
-        uniqueByRollNo.set(row.universityRollNo, row);
+        uniqueByEmail.set(row.email, row);
       });
-      const dedupedRows = Array.from(uniqueByRollNo.values());
+      const dedupedRows = Array.from(uniqueByEmail.values());
 
       await Promise.all(
         dedupedRows.map((row) =>
           CourseEnrollment.findOneAndUpdate(
-            { institutionId, courseId, universityRollNo: row.universityRollNo },
+            {
+              institutionId,
+              courseId,
+              $or: [{ email: row.email }, { universityRollNo: row.universityRollNo }],
+            },
             {
               $set: {
                 fullName: row.fullName,
                 section: row.section,
                 classRollNo: row.classRollNo,
+                email: row.email,
                 isActive: true,
                 updatedBy: req.authUser._id,
               },
@@ -1554,7 +1580,7 @@ router.post(
           {
             institutionId,
             courseId,
-            universityRollNo: { $nin: dedupedRows.map((row) => row.universityRollNo) },
+            email: { $nin: dedupedRows.map((row) => row.email) },
           },
           {
             $set: {

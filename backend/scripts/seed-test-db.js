@@ -344,6 +344,7 @@ async function seedInstitution({
         institutionId,
         courseId: course._id,
         universityRollNo: student.universityRollNo,
+        email: student.email,
         fullName: student.name,
         section,
         classRollNo: `R${pad(((base + j) % 999) + 1, 3)}`,

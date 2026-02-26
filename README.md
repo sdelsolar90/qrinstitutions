@@ -23,7 +23,7 @@ Built with Node.js, Express, MongoDB, and Tailwind-based frontend pages.
   - Programs and program versions.
   - Courses with schedule metadata.
   - Teacher-course assignment.
-  - Enrollment roster per course.
+  - Enrollment roster per course (bulk uploads now include student email; the system uses the email address to verify a student exists before attendance is accepted).
 - Teacher flow:
   - Course selector with search.
   - QR generation per selected course.

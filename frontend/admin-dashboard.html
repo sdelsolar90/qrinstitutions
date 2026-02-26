@@ -200,10 +200,10 @@
                     <textarea
                         id="enrollmentBulkInput"
                         rows="5"
-                        placeholder="ROLL001, Juan Perez, A, 01&#10;ROLL002, Maria Diaz, A, 02"
+                        placeholder="ROLL001, Juan Perez, juan.perez@example.edu, A, 01&#10;ROLL002, Maria Diaz, maria.diaz@example.edu, A, 02"
                         class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     ></textarea>
-                    <p class="text-xs text-gray-500 mt-1">Format: `universityRollNo, fullName, section, classRollNo`</p>
+                    <p class="text-xs text-gray-500 mt-1">Format: `universityRollNo, fullName, email, section, classRollNo`</p>
                 </div>
                 <div class="mt-3 flex items-center gap-2">
                     <button id="loadEnrollmentsBtn" class="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors">
@@ -223,6 +223,7 @@
                             <tr>
                                 <th class="px-3 py-2 border">Roll No</th>
                                 <th class="px-3 py-2 border">Full Name</th>
+                                <th class="px-3 py-2 border">Email</th>
                                 <th class="px-3 py-2 border">Section</th>
                                 <th class="px-3 py-2 border">Class Roll</th>
                                 <th class="px-3 py-2 border">Status</th>
@@ -646,9 +647,9 @@
 
     function downloadEnrollmentTemplate() {
         const csvLines = [
-            'universityRollNo,fullName,section,classRollNo',
-            'ROLL001,Juan Perez,A,01',
-            'ROLL002,Maria Diaz,A,02',
+            'universityRollNo,fullName,email,section,classRollNo',
+            'ROLL001,Juan Perez,juan.perez@example.edu,A,01',
+            'ROLL002,Maria Diaz,maria.diaz@example.edu,A,02',
         ];
         const blob = new Blob([csvLines.join('\n')], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
@@ -673,10 +674,16 @@
         const detect = (candidates) => firstRow.findIndex((header) => candidates.includes(header));
         const idxRoll = detect(['universityrollno', 'rollno', 'roll', 'universityroll']);
         const idxName = detect(['fullname', 'name', 'studentname']);
+        const idxEmail = detect(['email', 'studentemail', 'correo', 'mail']);
         const idxSection = detect(['section']);
         const idxClassRoll = detect(['classrollno', 'classroll', 'classrollnumber']);
 
-        const hasHeader = idxRoll >= 0 && idxName >= 0 && idxSection >= 0 && idxClassRoll >= 0;
+        const hasHeader =
+            idxRoll >= 0 &&
+            idxName >= 0 &&
+            idxEmail >= 0 &&
+            idxSection >= 0 &&
+            idxClassRoll >= 0;
         const start = hasHeader ? 1 : 0;
 
         const result = [];
@@ -684,12 +691,14 @@
             const r = rows[i] || [];
             const roll = String(hasHeader ? r[idxRoll] : r[0] || '').trim();
             const name = String(hasHeader ? r[idxName] : r[1] || '').trim();
-            const section = String(hasHeader ? r[idxSection] : r[2] || '').trim();
-            const classRoll = String(hasHeader ? r[idxClassRoll] : r[3] || '').trim();
-            if (!roll && !name && !section && !classRoll) continue;
+            const email = String(hasHeader ? r[idxEmail] : r[2] || '').trim();
+            const section = String(hasHeader ? r[idxSection] : r[3] || '').trim();
+            const classRoll = String(hasHeader ? r[idxClassRoll] : r[4] || '').trim();
+            if (!roll && !name && !email && !section && !classRoll) continue;
             result.push({
                 universityRollNo: roll,
                 fullName: name,
+                email,
                 section,
                 classRollNo: classRoll,
             });
@@ -1956,6 +1965,7 @@
                 <tr>
                     <td class="px-3 py-2 border">${escapeHtml(row.universityRollNo || '-')}</td>
                     <td class="px-3 py-2 border">${escapeHtml(row.fullName || '-')}</td>
+                    <td class="px-3 py-2 border">${escapeHtml(row.email || '-')}</td>
                     <td class="px-3 py-2 border">${escapeHtml(row.section || '-')}</td>
                     <td class="px-3 py-2 border">${escapeHtml(row.classRollNo || '-')}</td>
                     <td class="px-3 py-2 border">${row.isActive ? 'ACTIVE' : 'INACTIVE'}</td>
@@ -2386,16 +2396,17 @@
 
         lines.forEach((line, index) => {
             const parts = line.split(',').map((part) => part.trim());
-            if (parts.length < 4) {
-                errors.push(`Line ${index + 1}: expected 4 comma-separated values`);
+            if (parts.length < 5) {
+                errors.push(`Line ${index + 1}: expected 5 comma-separated values (include email)`);
                 return;
             }
 
             rows.push({
                 universityRollNo: parts[0],
                 fullName: parts[1],
-                section: parts[2],
-                classRollNo: parts[3]
+                email: parts[2],
+                section: parts[3],
+                classRollNo: parts[4]
             });
         });
 
